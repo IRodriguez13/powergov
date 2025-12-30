@@ -4,6 +4,10 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#define CPU_LOW 0.25
+#define CPU_MEDIUM 0.60
+#define CPU_HIGH 0.75
+
 typedef enum
 {
     GOV_POWERSAVE,
@@ -20,25 +24,25 @@ void powergov_loop(void)
     {
         double load = get_cpu_usage();
 
-        if(state == GOV_POWERSAVE && load > 0.35)
+        if(state == GOV_POWERSAVE && load > CPU_LOW)
         {
             set_governor("schedutil");
             state = GOV_BALANCED;
         }
 
-        if(state == GOV_BALANCED && load > 0.75)
+        if(state == GOV_BALANCED && load > CPU_HIGH)
         {
             set_governor("performance");
             state = GOV_PERFORMANCE;
         }
 
-        else if(state == GOV_PERFORMANCE && load < 0.60)
+        else if(state == GOV_PERFORMANCE && load < CPU_MEDIUM)
         {
             set_governor("schedutil");
             state = GOV_BALANCED;
         }
 
-        else if(state == GOV_BALANCED && load< 0.25)
+        else if(state == GOV_BALANCED && load < CPU_LOW)
         {
             set_governor("powersave");
             state = GOV_POWERSAVE;
