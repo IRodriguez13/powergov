@@ -7,11 +7,8 @@
 
 void start_powergov(void)
 {
-    if(fork() == 0) 
-    {
-        setsid();    
-        powergov_loop();
-    }
+    setsid();    
+    powergov_loop();
 }
 
 void stop_powergov(void)
