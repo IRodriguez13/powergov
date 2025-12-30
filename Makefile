@@ -18,5 +18,10 @@ $(TARGET): $(OBJ)
 install:
 	cp $(TARGET) /usr/local/bin/
 
+install-service:
+	cp service/powergov.service /etc/systemd/system/
+	systemctl daemon-reload
+
+
 clean:
 	rm -f $(OBJ) $(TARGET)

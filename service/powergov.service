@@ -1,0 +1,13 @@
+[Unit]
+Description=Power governor dynamic manager
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/powergov on
+Restart=always
+RestartSec=1
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target
