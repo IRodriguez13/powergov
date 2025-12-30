@@ -164,18 +164,11 @@ powergov/
     └── powergov.service # systemd service file
 ```
 
-## Limitations
-
-- Requires root privileges to modify CPU governors
-- Only works on systems with CPU frequency scaling support
-- Governor availability depends on kernel configuration and hardware support
-- Fixed thresholds may not be optimal for all workloads (consider configuration options for future versions)
-
 ## Contributing
 
 Contributions are welcome. Please ensure that any modifications maintain compatibility with the GPL-3 license and include appropriate documentation.
 
 ## Disclaimer
 
-This software modifies system-level CPU frequency scaling behavior. While designed to be safe, users should understand that incorrect governor settings or system misconfiguration could affect system stability or performance. Use at your own risk.
+This software modifies system-level CPU frequency scaling behavior. While designed to be safe, users should understand that incorrect governor settings or system misconfiguration could affect system performance. Use at your own risk.
 
