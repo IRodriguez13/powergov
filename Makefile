@@ -4,7 +4,8 @@ CFLAGS = -Wall -Wextra -O2
 SRC = main.c \
       cpu/cpu_load.c \
       governor/governor.c \
-      governor/loop.c
+      governor/loop.c \
+	  Battery/battery.c
 
 OBJ = $(SRC:.c=.o)
 

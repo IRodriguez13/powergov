@@ -6,18 +6,21 @@ int get_battery_level(void)
 {
     FILE *f = fopen("/sys/class/power_supply/BAT0/capacity", "r");
 
-    if(!f)
-    {
-        perror("fopen");
+    if (!f)
         return -1;
-    }
 
     int capacity;
 
     fscanf(f, "%d", &capacity);
+    
+    if (fscanf(f, "%d", &capacity) != 1)
+    {
+        fclose(f);
+        return -1;
+    }
+
     fclose(f);
 
     printf("Battery capacity: %d%%\n", capacity);
-    return 0;
+    return capacity;
 }
-

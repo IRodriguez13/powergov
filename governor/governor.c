@@ -11,7 +11,7 @@ int set_governor(const char *gov)
     if (!d) return -1;
 
     struct dirent *entry;
-    char path[256];
+    char path[512];
 
     while ((entry = readdir(d)) != NULL)
     {
@@ -23,13 +23,16 @@ int set_governor(const char *gov)
                      entry->d_name);
 
             FILE *fp = fopen(path, "w");
-            if (fp)
+            if (!fp)
             {
-                fprintf(fp, "%s\n", gov);
-                fclose(fp);
+                return -1;
             }
+
+            fprintf(fp, "%s\n", gov);
+            fclose(fp);
         }
     }
 
     closedir(d);
+    return 0;
 }
