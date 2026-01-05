@@ -37,9 +37,14 @@ int main(int argc, char *argv[])
         stop_powergov();
     }
 
+    else if(strcmp(argv[1], "--battery-safe") == 0)
+    {
+       
+    }
+
     else
     {
-        printf("Invalid argument. Use 'on' or 'off'.\n");
+        printf("Invalid argument. Use --help.\n");
         return 1;
     }
 
