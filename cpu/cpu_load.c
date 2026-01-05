@@ -24,7 +24,7 @@ static void read_cpu_times(unsigned long long *idle,
 /* 
     This is simple I know, but it's a deterministic way to get an aprox cpu usage number
     
-    The business is: read, wait a bit, read again & calculate the deltas whit 
+    The business is: read, wait a bit, read again & calculate the deltas with 
     the total and idle times.
 */
 double get_cpu_usage(void)

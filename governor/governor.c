@@ -13,7 +13,7 @@ int set_governor(const char *gov)
     struct dirent *entry;
     char path[256];
 
- while ((entry = readdir(d)) != NULL)
+    while ((entry = readdir(d)) != NULL)
     {
         if (strncmp(entry->d_name, "cpu", 3) == 0 &&
             entry->d_name[3] >= '0' && entry->d_name[3] <= '9')
