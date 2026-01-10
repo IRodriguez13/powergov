@@ -13,7 +13,9 @@ powergov operates through a continuous monitoring loop that:
 1. **Monitors CPU Load**: Samples CPU utilization by reading `/proc/stat` and calculating usage over a 200ms measurement window
 2. **State Management**: Maintains a three-state system (POWERSAVE, BALANCED, PERFORMANCE) representing different power/performance profiles
 3. **Governor Switching**: Dynamically sets the appropriate CPU frequency governor for all CPU cores via `/sys/devices/system/cpu/cpu*/cpufreq/scaling_governor`
-4. **Background Operation**: Runs as a daemon process, forking into the background and operating independently
+4. **Battery Monitoring**: When battery-safe mode is enabled, monitors battery level and prevents performance mode when battery is low
+5. **Dynamic Configuration**: Supports runtime configuration changes via Unix domain socket, allowing threshold adjustments without service restart
+6. **Background Operation**: Runs as a daemon process, operating independently as a system service
 
 ### State Transitions
 
@@ -106,17 +108,52 @@ sudo systemctl start powergov.service
 
 ## Usage
 
-### Manual Control
+### Basic Commands
 
-Start powergov:
+**Start powergov:**
 ```bash
 sudo powergov on
 ```
 
-Stop powergov:
+**Stop powergov:**
 ```bash
 sudo powergov off
 ```
+
+**Get battery level:**
+```bash
+powergov getbattery
+```
+Returns the current battery percentage (0-100) if a battery is detected, otherwise nothing.
+
+**Display help:**
+```bash
+powergov --help
+```
+
+### Battery-Safe Mode
+
+powergov supports dynamic battery-aware configuration to prevent the system from using performance mode when battery is low.
+
+**Enable battery-safe mode with threshold:**
+```bash
+sudo powergov --battery-safe <percent>
+```
+
+This command configures powergov to disable the `performance` governor when battery level falls below the specified threshold. The configuration is applied immediately to the running process without requiring a restart.
+
+**Examples:**
+```bash
+sudo powergov --battery-safe 50    # Disable performance mode when battery <= 50%
+sudo powergov --battery-safe 20    # Disable performance mode when battery <= 20%
+sudo powergov --battery-safe 0     # Disable battery-safe mode (allow performance at any battery level)
+```
+
+When battery-safe mode is enabled:
+- If battery level is above the threshold: normal operation, performance mode can be used
+- If battery level is at or below the threshold: performance governor is blocked, system stays in `schedutil` or `powersave`
+- Configuration can be changed on-the-fly while powergov is running
+- Battery level is checked every ~10 seconds
 
 ### Service Management
 
@@ -126,6 +163,7 @@ If installed as a systemd service:
 sudo systemctl start powergov    # Start the service
 sudo systemctl stop powergov     # Stop the service
 sudo systemctl status powergov   # Check service status
+sudo systemctl restart powergov  # Restart the service
 ```
 
 ## Technical Details
@@ -160,6 +198,9 @@ powergov/
 ├── cpu/
 │   ├── cpu_load.c      # CPU utilization measurement
 │   └── cpu_load.h
+├── Battery/
+│   ├── battery.c       # Battery level detection
+│   └── battery.h
 └── service/
     └── powergov.service # systemd service file
 ```

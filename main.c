@@ -20,17 +20,17 @@ int send_battery_config(int threshold)
     const char *socket_paths[] = {SOCKET_PATH, "/tmp/powergov.sock", NULL};
     int i;
 
-    /* Try both /run and /tmp locations */
+    
     for (i = 0; socket_paths[i] != NULL; i++)
     {
-        /* Create socket */
+        
         sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (sockfd < 0)
         {
             continue;
         }
 
-        /* Setup address structure */
+        
         memset(&server_addr, 0, sizeof(server_addr));
         server_addr.sun_family = AF_UNIX;
         strncpy(server_addr.sun_path, socket_paths[i], sizeof(server_addr.sun_path) - 1);
@@ -44,7 +44,7 @@ int send_battery_config(int threshold)
 
             if (n == sizeof(int))
             {
-                return 0; /* Success */
+                return 0; 
             }
             return -1;
         }
@@ -120,7 +120,13 @@ int main(int argc, char *argv[])
         /* Try to send configuration to running process */
         if (send_battery_config(threshold) == 0)
         {
-            printf("Battery-safe configuration updated successfully.\n");
+            if (threshold != 0)
+            {
+                printf("Battery-safe configuration updated successfully.\n");
+                return 0;
+            }
+                printf("battery-safe off\n");
+            
             return 0;
         }
 

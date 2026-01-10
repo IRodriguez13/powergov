@@ -19,6 +19,5 @@ int get_battery_level(void)
 
     fclose(f);
 
-    printf("Battery capacity: %d%%\n", capacity);
     return capacity;
 }
