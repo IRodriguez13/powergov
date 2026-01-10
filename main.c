@@ -1,5 +1,6 @@
 #include "governor/loop.h"
 #include "Battery/battery.h"
+#include "cpu/cpu_load.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -20,17 +21,14 @@ int send_battery_config(int threshold)
     const char *socket_paths[] = {SOCKET_PATH, "/tmp/powergov.sock", NULL};
     int i;
 
-    
     for (i = 0; socket_paths[i] != NULL; i++)
     {
-        
         sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (sockfd < 0)
         {
             continue;
         }
 
-        
         memset(&server_addr, 0, sizeof(server_addr));
         server_addr.sun_family = AF_UNIX;
         strncpy(server_addr.sun_path, socket_paths[i], sizeof(server_addr.sun_path) - 1);
@@ -38,14 +36,101 @@ int send_battery_config(int threshold)
         /* Connect to server */
         if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == 0)
         {
-            /* Connection successful, send threshold */
+            /* Connection successful, send threshold (legacy protocol) */
             n = write(sockfd, &threshold, sizeof(int));
             close(sockfd);
 
             if (n == sizeof(int))
             {
-                return 0; 
+                return 0;
             }
+            return -1;
+        }
+
+        close(sockfd);
+    }
+
+    return -1;
+}
+
+static const char *state_from_governor(const char *gov)
+{
+    if (!gov)
+        return "UNKNOWN";
+    if (strcmp(gov, "powersave") == 0)
+        return "POWERSAVE";
+    if (strcmp(gov, "performance") == 0)
+        return "PERFORMANCE";
+    if (strcmp(gov, "schedutil") == 0)
+        return "BALANCED";
+    return "UNKNOWN";
+}
+
+static int read_current_governor(char *out, size_t out_sz)
+{
+    if (!out || out_sz == 0)
+        return -1;
+
+    FILE *f = fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor", "r");
+    if (!f)
+        return -1;
+
+    if (!fgets(out, (int)out_sz, f))
+    {
+        fclose(f);
+        return -1;
+    }
+
+    fclose(f);
+
+    /* Strip newline */
+    size_t len = strlen(out);
+    if (len > 0 && out[len - 1] == '\n')
+        out[len - 1] = '\0';
+
+    return 0;
+}
+
+static int query_battery_config(powergov_socket_status_t *out_status)
+{
+    int sockfd;
+    struct sockaddr_un server_addr;
+    ssize_t n;
+    const char *socket_paths[] = {SOCKET_PATH, "/tmp/powergov.sock", NULL};
+    int i;
+
+    if (!out_status)
+        return -1;
+
+    for (i = 0; socket_paths[i] != NULL; i++)
+    {
+        sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (sockfd < 0)
+            continue;
+
+        memset(&server_addr, 0, sizeof(server_addr));
+        server_addr.sun_family = AF_UNIX;
+        strncpy(server_addr.sun_path, socket_paths[i], sizeof(server_addr.sun_path) - 1);
+
+        if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == 0)
+        {
+            powergov_socket_msg_t msg;
+            msg.magic = POWERGOV_SOCKET_MAGIC;
+            msg.cmd = POWERGOV_SOCKET_CMD_QUERY_BATTERY_CONFIG;
+            msg.value = 0;
+
+            n = write(sockfd, &msg, sizeof(msg));
+            if (n != (ssize_t)sizeof(msg))
+            {
+                close(sockfd);
+                return -1;
+            }
+
+            n = read(sockfd, out_status, sizeof(*out_status));
+            close(sockfd);
+
+            if (n == (ssize_t)sizeof(*out_status))
+                return 0;
             return -1;
         }
 
@@ -79,7 +164,7 @@ int main(int argc, char *argv[])
 {
     if (argc < 2)
     {
-        printf("Usage: powergov [on/off]\n");
+        printf("Usage: powergov [on/off/status]\n");
         return -1;
     }
 
@@ -137,12 +222,38 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    else if (strcmp(argv[1], "getbattery") == 0)
+    else if (strcmp(argv[1], "status") == 0)
     {
-        int b = get_battery_level();
+        char gov[64];
+        const char *state = "UNKNOWN";
+        double load = get_cpu_usage();
+        int battery = get_battery_level();
 
-        if (b >= 0)
-            printf("%d\n", b);
+        if (read_current_governor(gov, sizeof(gov)) == 0)
+            state = state_from_governor(gov);
+
+        printf("Current state: %s\n", state);
+        printf("CPU load: %.0f%%\n", load * 100.0);
+
+        if (battery >= 0)
+            printf("Battery: %d%%\n", battery);
+        else
+            printf("Battery: N/A\n");
+
+        powergov_socket_status_t st;
+        if (query_battery_config(&st) == 0)
+        {
+            printf("Battery-safe: %s\n", st.battery_safe_enabled ? "on" : "off");
+            if (st.battery_safe_enabled)
+                printf("Battery-safe threshold: %d%%\n", st.battery_threshold);
+            else
+                printf("Battery-safe threshold: 0%%\n");
+        }
+        else
+        {
+            printf("Battery-safe: unknown (powergov not running)\n");
+            printf("Battery-safe threshold: unknown\n");
+        }
     }
 
     else if (strcmp(argv[1], "--help") == 0)
@@ -151,8 +262,9 @@ int main(int argc, char *argv[])
             "Usage:\n"
             "  powergov on\n"
             "  powergov off\n"
+            "  powergov status\n"
             "  powergov --battery-safe <percent>\n"
-            "  powergov getbattery\n\n"
+            "\n"
             "Options:\n"
             "  --battery-safe N   Disable performance governor when battery <= N%%\n"
             "  Use 0 to disable battery safe mode\n");

@@ -120,12 +120,6 @@ sudo powergov on
 sudo powergov off
 ```
 
-**Get battery level:**
-```bash
-powergov getbattery
-```
-Returns the current battery percentage (0-100) if a battery is detected, otherwise nothing.
-
 **Display help:**
 ```bash
 powergov --help

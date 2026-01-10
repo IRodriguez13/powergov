@@ -97,6 +97,7 @@ int handle_socket_config(int sockfd, powergov_config_t *config)
     socklen_t client_len = sizeof(client_addr);
     ssize_t n;
     int threshold;
+    powergov_socket_msg_t msg;
 
     FD_ZERO(&readfds);
     FD_SET(sockfd, &readfds);
@@ -121,10 +122,14 @@ int handle_socket_config(int sockfd, powergov_config_t *config)
             return -1;
         }
 
-        /* Read threshold value */
-        n = read(client_fd, &threshold, sizeof(int));
-        if (n == sizeof(int))
+        /* Accept both legacy (int threshold) and v1 protocol messages */
+        memset(&msg, 0, sizeof(msg));
+        n = read(client_fd, &msg, sizeof(msg));
+
+        if (n == (ssize_t)sizeof(int))
         {
+            /* Legacy client: it sent only an int threshold */
+            memcpy(&threshold, &msg, sizeof(int));
             if (threshold == 0)
             {
                 config->battery_safe_enabled = 0;
@@ -133,6 +138,29 @@ int handle_socket_config(int sockfd, powergov_config_t *config)
             {
                 config->battery_safe_enabled = 1;
                 config->battery_threshold = threshold;
+            }
+        }
+        else if (n == (ssize_t)sizeof(msg) && msg.magic == POWERGOV_SOCKET_MAGIC)
+        {
+            if (msg.cmd == POWERGOV_SOCKET_CMD_SET_BATTERY_THRESHOLD)
+            {
+                threshold = msg.value;
+                if (threshold == 0)
+                {
+                    config->battery_safe_enabled = 0;
+                }
+                else if (threshold > 0 && threshold <= 100)
+                {
+                    config->battery_safe_enabled = 1;
+                    config->battery_threshold = threshold;
+                }
+            }
+            else if (msg.cmd == POWERGOV_SOCKET_CMD_QUERY_BATTERY_CONFIG)
+            {
+                powergov_socket_status_t status;
+                status.battery_safe_enabled = config->battery_safe_enabled;
+                status.battery_threshold = config->battery_threshold;
+                (void)write(client_fd, &status, sizeof(status));
             }
         }
 

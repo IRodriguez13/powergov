@@ -1,7 +1,7 @@
 [Unit]
 Description=Power governor dynamic manager
 After=multi-user.target
-wants=multi-usert.target
+Wants=multi-user.target
 
 [Service]
 Type=simple
