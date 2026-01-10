@@ -10,8 +10,6 @@ int get_battery_level(void)
         return -1;
 
     int capacity;
-
-    fscanf(f, "%d", &capacity);
     
     if (fscanf(f, "%d", &capacity) != 1)
     {

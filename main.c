@@ -4,8 +4,56 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <errno.h>
+
+#define SOCKET_PATH "/run/powergov.sock"
 
 powergov_config_t config = {0};
+
+int send_battery_config(int threshold)
+{
+    int sockfd;
+    struct sockaddr_un server_addr;
+    ssize_t n;
+    const char *socket_paths[] = {SOCKET_PATH, "/tmp/powergov.sock", NULL};
+    int i;
+
+    /* Try both /run and /tmp locations */
+    for (i = 0; socket_paths[i] != NULL; i++)
+    {
+        /* Create socket */
+        sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (sockfd < 0)
+        {
+            continue;
+        }
+
+        /* Setup address structure */
+        memset(&server_addr, 0, sizeof(server_addr));
+        server_addr.sun_family = AF_UNIX;
+        strncpy(server_addr.sun_path, socket_paths[i], sizeof(server_addr.sun_path) - 1);
+
+        /* Connect to server */
+        if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == 0)
+        {
+            /* Connection successful, send threshold */
+            n = write(sockfd, &threshold, sizeof(int));
+            close(sockfd);
+
+            if (n == sizeof(int))
+            {
+                return 0; /* Success */
+            }
+            return -1;
+        }
+
+        close(sockfd);
+    }
+
+    return -1;
+}
 
 /* Main CLI entrypoint with the on/off logic. No more, no less*/
 
@@ -56,16 +104,31 @@ int main(int argc, char *argv[])
         }
 
         int threshold = atoi(argv[2]);
-        if (threshold <= 0 || threshold > 100)
+        if (threshold < 0 || threshold > 100)
         {
-            fprintf(stderr, "Invalid battery threshold\n");
+            fprintf(stderr, "Invalid battery threshold (must be 0-100)\n");
             return 1;
         }
 
-        config.battery_safe_enabled = 1;
-        config.battery_threshold = threshold;
+        /* Check if battery is available (skip check if disabling with 0) */
+        if (threshold > 0 && get_battery_level() < 0)
+        {
+            fprintf(stderr, "powergov: warning: no battery detected, battery-safe mode not useful on this hardware\n");
+            return 1;
+        }
 
-        start_powergov(&config);
+        /* Try to send configuration to running process */
+        if (send_battery_config(threshold) == 0)
+        {
+            printf("Battery-safe configuration updated successfully.\n");
+            return 0;
+        }
+
+        /* If no process is running, inform user to use systemd */
+        fprintf(stderr, "Error: No running powergov process found.\n");
+        fprintf(stderr, "Please start the service with: sudo systemctl start powergov\n");
+        fprintf(stderr, "Or run manually with: sudo powergov on\n");
+        return 1;
     }
 
     else if (strcmp(argv[1], "getbattery") == 0)
