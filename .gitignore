@@ -1,4 +1,4 @@
 .vscode/
 *.o
-powergov
+/powergov
 *.sh

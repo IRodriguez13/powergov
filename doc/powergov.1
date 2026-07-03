@@ -1,0 +1,102 @@
+.TH POWERGOV 1 "July 2026" "powergov" "User Commands"
+.SH NAME
+powergov \- dynamic CPU frequency governor manager
+.SH SYNOPSIS
+.B powergov
+.I command
+.RB [ options ]
+.SH DESCRIPTION
+.B powergov
+monitors CPU utilization and switches CPU frequency governors
+.RB ( powersave ,
+.BR schedutil ,
+.BR performance )
+to balance power efficiency and responsiveness.
+It can run in the foreground, as a background daemon, or as a
+.BR systemd (8)
+service enabled at boot.
+.PP
+The daemon applies a three-state machine with implicit hysteresis:
+.TP
+.B POWERSAVE
+CPU load below 25%.
+.TP
+.B BALANCED
+.B schedutil
+governor; entered from powersave above 25% load.
+.TP
+.B PERFORMANCE
+.B performance
+governor; entered from balanced above 75% load, unless battery-safe mode blocks it.
+.SH COMMANDS
+.TP
+.B on
+Start the daemon in the foreground (used by
+.BR systemd ).
+Creates a pidfile and Unix socket for runtime control.
+.TP
+.B off
+Stop a running daemon via SIGTERM using the pidfile, with
+.BR pkill (1)
+as fallback.
+.TP
+.B status
+Show current governor state, CPU load, battery level, and battery-safe settings.
+.TP
+.B \-\-battery-safe
+.I percent
+Enable battery-safe mode: block
+.B performance
+when battery is at or below
+.IR percent
+(1\-100).
+Use
+.I 0
+to disable.
+Changes apply immediately to a running daemon and are persisted to
+.IR /etc/powergov.conf .
+.TP
+.B \-\-help
+Print usage summary.
+.SH FILES
+.TP
+.I /etc/powergov.conf
+Persistent configuration.
+.TP
+.I /run/powergov/powergov.pid
+Pidfile for the running daemon.
+.TP
+.I /run/powergov/powergov.sock
+Unix socket for runtime battery-safe updates.
+.TP
+.I /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+Kernel CPU governor interface (requires root to write).
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Invalid arguments, missing daemon, or configuration error.
+.SH EXAMPLES
+.TP
+Start manually:
+.RS
+.B sudo powergov on
+.RE
+.TP
+Install and enable boot service:
+.RS
+.B sudo make install-service
+.RE
+.TP
+Set battery-safe threshold to 30%:
+.RS
+.B sudo powergov \-\-battery-safe 30
+.RE
+.SH SEE ALSO
+.BR powergov (8),
+.BR systemd (1),
+.BR cpupower (1)
+.SH AUTHOR
+Iván Ezequiel Rodriguez.

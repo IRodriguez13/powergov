@@ -1,14 +1,19 @@
 [Unit]
 Description=Power governor dynamic manager
-After=multi-user.target
-Wants=multi-user.target
+After=local-fs.target
+Wants=local-fs.target
 
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/powergov on
-Restart=always
-RestartSec=1
+ExecStop=/bin/kill -TERM $MAINPID
+Restart=on-failure
+RestartSec=2
 Nice=-5
+RuntimeDirectory=powergov
+PIDFile=/run/powergov/powergov.pid
+KillMode=mixed
+TimeoutStopSec=10
 
 [Install]
 WantedBy=multi-user.target

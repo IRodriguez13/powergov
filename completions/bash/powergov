@@ -1,0 +1,28 @@
+# bash completion for powergov(1)
+
+_powergov()
+{
+    local cur prev
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD - 1]}"
+
+    if [[ "${COMP_WORDS[1]}" == "--battery-safe" ]]; then
+        COMPREPLY=( $( compgen -W '0 10 20 30 40 50 60 70 80 90 100' -- "$cur" ) )
+        return 0
+    fi
+
+    case "$prev" in
+        powergov)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $( compgen -W '--help --battery-safe' -- "$cur" ) )
+            else
+                COMPREPLY=( $( compgen -W 'on off status --help --battery-safe' -- "$cur" ) )
+            fi
+            return 0
+            ;;
+    esac
+
+    COMPREPLY=( $( compgen -W 'on off status --help --battery-safe' -- "$cur" ) )
+}
+
+complete -F _powergov powergov

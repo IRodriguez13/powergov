@@ -1,0 +1,86 @@
+.TH POWERGOV 8 "July 2026" "powergov" "System Administration"
+.SH NAME
+powergov \- systemd service for dynamic CPU governor management
+.SH SYNOPSIS
+.B systemctl
+.RB [ COMMAND ]
+.B powergov.service
+.SH DESCRIPTION
+.B powergov.service
+is a
+.BR systemd (8)
+unit that starts
+.BR powergov (1)
+at boot and keeps it resident across reboots.
+The service monitors CPU load every two seconds and adjusts governors on all CPU cores.
+.PP
+On start, configuration is loaded from
+.IR /etc/powergov.conf .
+Runtime changes via
+.B powergov \-\-battery-safe
+are written back to that file.
+.SH INSTALLATION
+.TP
+.B sudo make install-service
+Installs the binary, configuration file, systemd unit, bash completion, and man pages.
+Enables and starts the service for subsequent boots.
+.SH UNIT FILE
+The unit is installed as
+.IR /etc/systemd/system/powergov.service .
+.PP
+Key properties:
+.TP
+.B ExecStart=/usr/local/bin/powergov on
+Runs the daemon foreground process managed by systemd.
+.TP
+.B RuntimeDirectory=powergov
+Creates
+.I /run/powergov
+for the pidfile and control socket.
+.TP
+.B Restart=on-failure
+Restarts the daemon if it exits unexpectedly.
+.TP
+.B WantedBy=multi-user.target
+Enables automatic start on multi-user boot target.
+.SH SERVICE MANAGEMENT
+.TP
+.B systemctl start powergov
+Start the service.
+.TP
+.B systemctl stop powergov
+Stop the service gracefully (SIGTERM).
+.TP
+.B systemctl enable powergov
+Enable start at boot (done by
+.BR make install-service ).
+.TP
+.B systemctl disable powergov
+Disable start at boot.
+.TP
+.B systemctl status powergov
+Show service state and recent logs.
+.TP
+.B make service-status
+Convenience wrapper for
+.BR systemctl status .
+.SH FILES
+.TP
+.I /etc/systemd/system/powergov.service
+systemd unit file.
+.TP
+.I /etc/powergov.conf
+Service configuration (battery-safe threshold).
+.TP
+.I /run/powergov/powergov.pid
+Daemon pidfile.
+.TP
+.I /run/powergov/powergov.sock
+Control socket for
+.BR powergov (1).
+.SH SEE ALSO
+.BR powergov (1),
+.BR systemd.service (5),
+.BR systemd.unit (5)
+.SH AUTHOR
+Iván Ezequiel Rodriguez.

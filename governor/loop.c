@@ -1,10 +1,12 @@
 #include "loop.h"
 #include "../Battery/battery.h"
+#include "../config/config.h"
 #include "../cpu/cpu_load.h"
 #include "governor.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/select.h>
@@ -13,7 +15,14 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define SOCKET_PATH "/run/powergov.sock"
+#define SOCKET_PATH "/run/powergov/powergov.sock"
+
+static volatile sig_atomic_t powergov_shutdown = 0;
+
+void powergov_request_shutdown(void)
+{
+    powergov_shutdown = 1;
+}
 
 #define CPU_LOW 0.25
 #define CPU_MEDIUM 0.60
@@ -43,6 +52,9 @@ int setup_socket_server(void)
 
     /* Remove existing socket file if it exists */
     unlink(SOCKET_PATH);
+
+    /* Ensure runtime directory exists for manual (non-systemd) starts */
+    mkdir("/run/powergov", 0755);
 
     /* Setup address structure */
     memset(&server_addr, 0, sizeof(server_addr));
@@ -133,12 +145,14 @@ int handle_socket_config(int sockfd, powergov_config_t *config)
             if (threshold == 0)
             {
                 config->battery_safe_enabled = 0;
+                config->battery_threshold = 0;
             }
             else if (threshold > 0 && threshold <= 100)
             {
                 config->battery_safe_enabled = 1;
                 config->battery_threshold = threshold;
             }
+            powergov_config_save(config);
         }
         else if (n == (ssize_t)sizeof(msg) && msg.magic == POWERGOV_SOCKET_MAGIC)
         {
@@ -148,12 +162,14 @@ int handle_socket_config(int sockfd, powergov_config_t *config)
                 if (threshold == 0)
                 {
                     config->battery_safe_enabled = 0;
+                    config->battery_threshold = 0;
                 }
                 else if (threshold > 0 && threshold <= 100)
                 {
                     config->battery_safe_enabled = 1;
                     config->battery_threshold = threshold;
                 }
+                powergov_config_save(config);
             }
             else if (msg.cmd == POWERGOV_SOCKET_CMD_QUERY_BATTERY_CONFIG)
             {
@@ -205,6 +221,9 @@ void powergov_loop(powergov_config_t *config)
 
     for (;;)
     {
+        if (powergov_shutdown)
+            break;
+
         /* Check for new configuration from socket */
         if (socket_fd >= 0)
         {
@@ -272,10 +291,10 @@ void powergov_loop(powergov_config_t *config)
             state = GOV_POWERSAVE;
         }
 
-        sleep(2);
+        for (int i = 0; i < 20 && !powergov_shutdown; i++)
+            usleep(100000);
     }
 
-    /* Cleanup on exit */
     cleanup_socket_server(socket_fd);
 }
 
