@@ -2,6 +2,7 @@
 #include "Battery/battery.h"
 #include "config/config.h"
 #include "cpu/cpu_load.h"
+#include "version.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -272,6 +273,12 @@ int main(int argc, char *argv[])
         return -1;
     }
 
+    if (strcmp(argv[1], "-v") == 0 || strcmp(argv[1], "--version") == 0)
+    {
+        printf("powergov %s\n", POWERGOV_VERSION);
+        return 0;
+    }
+
     if (strcmp(argv[1], "on") == 0)
     {
         start_powergov(&config);
@@ -383,8 +390,10 @@ int main(int argc, char *argv[])
             "  powergov off\n"
             "  powergov status\n"
             "  powergov --battery-safe <percent>\n"
+            "  powergov -v\n"
             "\n"
             "Options:\n"
+            "  -v, --version      Print version and exit\n"
             "  --battery-safe N   Disable performance governor when battery <= N%%\n"
             "  Use 0 to disable battery safe mode\n"
             "\n"

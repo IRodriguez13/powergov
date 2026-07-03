@@ -1,4 +1,4 @@
-# bash completion for powergov(1)
+# bash completion for powergov(1) v1.7.2
 
 _powergov()
 {
@@ -14,15 +14,15 @@ _powergov()
     case "$prev" in
         powergov)
             if [[ "$cur" == -* ]]; then
-                COMPREPLY=( $( compgen -W '--help --battery-safe' -- "$cur" ) )
+                COMPREPLY=( $( compgen -W '--help --battery-safe -v --version' -- "$cur" ) )
             else
-                COMPREPLY=( $( compgen -W 'on off status --help --battery-safe' -- "$cur" ) )
+                COMPREPLY=( $( compgen -W 'on off status --help --battery-safe -v --version' -- "$cur" ) )
             fi
             return 0
             ;;
     esac
 
-    COMPREPLY=( $( compgen -W 'on off status --help --battery-safe' -- "$cur" ) )
+    COMPREPLY=( $( compgen -W 'on off status --help --battery-safe -v --version' -- "$cur" ) )
 }
 
 complete -F _powergov powergov

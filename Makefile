@@ -1,5 +1,6 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -O2
+CFLAGS = -Wall -Wextra -O2 -Iinclude -DPOWERGOV_VERSION=\"$(VERSION)\"
+VERSION := $(shell cat VERSION)
 
 SRC = main.c \
       cpu/cpu_load.c \
@@ -20,6 +21,10 @@ BASH_COMP = completions/bash/powergov
 MAN1_DIR = /usr/local/share/man/man1
 MAN8_DIR = /usr/local/share/man/man8
 BASH_COMP_DIR = /usr/share/bash-completion/completions
+DIST_NAME = powergov-$(VERSION)
+DIST_DIR = dist/$(DIST_NAME)
+DIST_TAR = dist/$(DIST_NAME).tar.gz
+PACK_FILES = VERSION Makefile README.md main.c include governor cpu Battery config completions doc service .gitignore
 
 all: $(TARGET)
 
@@ -76,7 +81,20 @@ service-status:
 		echo "systemctl not available"; \
 	fi
 
-.PHONY: all install install-bin install-man install-completion install-service stop uninstall uninstall-docs uninstall-service service-status clean
+pack: clean
+	@mkdir -p $(DIST_DIR)
+	@cp -r $(PACK_FILES) $(DIST_DIR)/
+	@mkdir -p dist
+	@tar -czf $(DIST_TAR) -C dist $(DIST_NAME)
+	@echo "packed $(DIST_TAR)"
+
+extract:
+	@test -f $(DIST_TAR) || (echo "missing $(DIST_TAR); run make pack first" && exit 1)
+	@rm -rf $(DIST_DIR)
+	@tar -xzf $(DIST_TAR) -C dist
+	@echo "extracted to $(DIST_DIR)"
+
+.PHONY: all install install-bin install-man install-completion install-service stop uninstall uninstall-docs uninstall-service service-status pack extract clean
 
 clean:
 	rm -f $(OBJ) $(TARGET)
