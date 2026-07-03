@@ -5,4 +5,8 @@
 #define POWERGOV_VERSION "unknown"
 #endif
 
+#define POWERGOV_SOURCE_URL "https://github.com/IRodriguez13/powergov"
+
+void powergov_print_version(void);
+
 #endif

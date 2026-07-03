@@ -1,0 +1,42 @@
+#compdef powergov
+# zsh completion for powergov(1) v1.7.3
+
+_powergov() {
+    local -a commands flags thresholds
+    commands=(on off status)
+    flags=(
+        '--help[Show help]'
+        '--battery-safe[Set battery-safe threshold percent]'
+        '--version[Show version]'
+        '-v[Show version]'
+    )
+    thresholds=(0 10 20 30 40 50 60 70 80 90 100)
+
+    if (( CURRENT == 2 )); then
+        case $words[2] in
+            --battery-safe)
+                _values 'battery threshold' $thresholds
+                return
+                ;;
+            -v|--version|--help)
+                return
+                ;;
+        esac
+    fi
+
+    if (( CURRENT == 3 )) && [[ $words[2] == --battery-safe ]]; then
+        _values 'battery threshold' $thresholds
+        return
+    fi
+
+    if (( CURRENT == 2 )); then
+        _describe -V 'command' commands
+        _describe -V 'option' flags
+        return
+    fi
+
+    _describe -V 'command' commands
+    _describe -V 'option' flags
+}
+
+_powergov "$@"

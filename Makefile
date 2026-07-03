@@ -3,6 +3,7 @@ CFLAGS = -Wall -Wextra -O2 -Iinclude -DPOWERGOV_VERSION=\"$(VERSION)\"
 VERSION := $(shell cat VERSION)
 
 SRC = main.c \
+      src/version.c \
       cpu/cpu_load.c \
       governor/governor.c \
       governor/loop.c \
@@ -18,13 +19,16 @@ SYSTEMD_UNIT = /etc/systemd/system/powergov.service
 MAN1 = doc/powergov.1
 MAN8 = doc/powergov.8
 BASH_COMP = completions/bash/powergov
+ZSH_COMP = completions/zsh/_powergov
 MAN1_DIR = /usr/local/share/man/man1
 MAN8_DIR = /usr/local/share/man/man8
 BASH_COMP_DIR = /usr/share/bash-completion/completions
+BASH_COMP_LEGACY_DIR = /etc/bash_completion.d
+ZSH_COMP_DIR = /usr/local/share/zsh/site-functions
 DIST_NAME = powergov-$(VERSION)
 DIST_DIR = dist/$(DIST_NAME)
 DIST_TAR = dist/$(DIST_NAME).tar.gz
-PACK_FILES = VERSION Makefile README.md main.c include governor cpu Battery config completions doc service .gitignore
+PACK_FILES = VERSION Makefile README.md main.c src include governor cpu Battery config completions doc service .gitignore
 
 all: $(TARGET)
 
@@ -46,6 +50,8 @@ install-man:
 
 install-completion:
 	install -D -m 644 $(BASH_COMP) $(BASH_COMP_DIR)/powergov
+	install -D -m 644 $(BASH_COMP) $(BASH_COMP_LEGACY_DIR)/powergov
+	install -D -m 644 $(ZSH_COMP) $(ZSH_COMP_DIR)/_powergov
 
 install-service: install
 	install -D -m 644 config/powergov.conf $(CONF_FILE)
@@ -65,7 +71,8 @@ uninstall: stop uninstall-service uninstall-docs
 	rm -f /usr/local/bin/$(TARGET)
 
 uninstall-docs:
-	rm -f $(MAN1_DIR)/powergov.1 $(MAN8_DIR)/powergov.8 $(BASH_COMP_DIR)/powergov
+	rm -f $(MAN1_DIR)/powergov.1 $(MAN8_DIR)/powergov.8
+	rm -f $(BASH_COMP_DIR)/powergov $(BASH_COMP_LEGACY_DIR)/powergov $(ZSH_COMP_DIR)/_powergov
 	-@if command -v mandb >/dev/null 2>&1; then mandb -q; fi
 
 uninstall-service:

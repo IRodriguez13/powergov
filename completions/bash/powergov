@@ -1,28 +1,35 @@
-# bash completion for powergov(1) v1.7.2
+# bash completion for powergov(1) v1.7.3 -*- shell-script -*-
 
 _powergov()
 {
-    local cur prev
-    cur="${COMP_WORDS[COMP_CWORD]}"
-    prev="${COMP_WORDS[COMP_CWORD - 1]}"
+    local cur prev words cword split
+    _init_completion -s || return
 
-    if [[ "${COMP_WORDS[1]}" == "--battery-safe" ]]; then
-        COMPREPLY=( $( compgen -W '0 10 20 30 40 50 60 70 80 90 100' -- "$cur" ) )
-        return 0
-    fi
+    local commands='on off status'
+    local flags='--help --battery-safe --version -v'
 
-    case "$prev" in
-        powergov)
-            if [[ "$cur" == -* ]]; then
-                COMPREPLY=( $( compgen -W '--help --battery-safe -v --version' -- "$cur" ) )
-            else
-                COMPREPLY=( $( compgen -W 'on off status --help --battery-safe -v --version' -- "$cur" ) )
-            fi
-            return 0
+    case $prev in
+        --battery-safe)
+            COMPREPLY=( $( compgen -W '0 10 20 30 40 50 60 70 80 90 100' -- "$cur" ) )
+            return
             ;;
     esac
 
-    COMPREPLY=( $( compgen -W 'on off status --help --battery-safe -v --version' -- "$cur" ) )
-}
+    if (( cword == 1 )); then
+        if [[ $cur == -* ]]; then
+            COMPREPLY=( $( compgen -W "$flags" -- "$cur" ) )
+        else
+            COMPREPLY=( $( compgen -W "$commands $flags" -- "$cur" ) )
+        fi
+        return
+    fi
 
-complete -F _powergov powergov
+    if [[ $cur == -* ]]; then
+        COMPREPLY=( $( compgen -W "$flags" -- "$cur" ) )
+    else
+        COMPREPLY=( $( compgen -W "$commands $flags" -- "$cur" ) )
+    fi
+} &&
+    complete -F _powergov powergov
+
+# ex: filetype=sh

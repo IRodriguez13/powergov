@@ -275,7 +275,7 @@ int main(int argc, char *argv[])
 
     if (strcmp(argv[1], "-v") == 0 || strcmp(argv[1], "--version") == 0)
     {
-        printf("powergov %s\n", POWERGOV_VERSION);
+        powergov_print_version();
         return 0;
     }
 
@@ -393,7 +393,7 @@ int main(int argc, char *argv[])
             "  powergov -v\n"
             "\n"
             "Options:\n"
-            "  -v, --version      Print version and exit\n"
+            "  -v, --version      Show version information and exit\n"
             "  --battery-safe N   Disable performance governor when battery <= N%%\n"
             "  Use 0 to disable battery safe mode\n"
             "\n"
