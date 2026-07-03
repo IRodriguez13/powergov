@@ -1,5 +1,5 @@
 .vscode/
 *.o
 /powergov
-*.sh
+/*.sh
 /dist/

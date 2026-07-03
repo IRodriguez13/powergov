@@ -101,7 +101,10 @@ extract:
 	@tar -xzf $(DIST_TAR) -C dist
 	@echo "extracted to $(DIST_DIR)"
 
-.PHONY: all install install-bin install-man install-completion install-service stop uninstall uninstall-docs uninstall-service service-status pack extract clean
+release:
+	@./scripts/release.sh
+
+.PHONY: all install install-bin install-man install-completion install-service stop uninstall uninstall-docs uninstall-service service-status pack extract release clean
 
 clean:
 	rm -f $(OBJ) $(TARGET)
