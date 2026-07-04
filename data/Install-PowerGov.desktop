@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Install PowerGov
+Name[es]=Instalar PowerGov
+Comment=Build and install PowerGov (service, app, desktop shortcut)
+Comment[es]=Compila e instala PowerGov (servicio, app, acceso directo)
+Exec=./install-powergov.sh
+Icon=./data/icons/hicolor/256x256/apps/powergov.png
+Categories=Utility;System;
+Terminal=false
+StartupNotify=true

@@ -23,23 +23,29 @@ make pack
 NOTES="$(cat <<EOF
 ## powergov ${VERSION}
 
-- UI GTK: pestañas Perfil/Diagnóstico, log y métricas sin reset de scroll
-- Modo dev: botón «Volver a modo usuario»; acceso directo en el escritorio al instalar
-- i18n EN/ES (inglés por defecto) con botón EN/ES en la barra de título
-- Icono, \`.desktop\`, Polkit y \`libpowergov.so\`
+- **Instalador de doble clic**: extraé el tarball y abrí \`Install-PowerGov.desktop\` (o ejecutá \`./install-powergov.sh\`).
+- UI GTK EN/ES, acceso directo en el escritorio, log/métricas sin saltos de scroll.
+- Servicio systemd + \`libpowergov.so\` + Polkit para diagnóstico.
 
-### Instalación
+### Instalación rápida (usuario)
 
 \`\`\`bash
 tar -xzf powergov-${VERSION}.tar.gz
 cd powergov-${VERSION}
-make
-sudo make install-service
-make powergov-ui
-sudo make install-ui install-ui-policy install-ui-helper
+# Doble clic en «Install PowerGov» / «Instalar PowerGov»
+# GNOME: clic derecho → «Permitir lanzar» la primera vez
+./install-powergov.sh
 \`\`\`
 
-El acceso directo en el escritorio se crea automáticamente (\`sudo make install-ui\` usa \`\$SUDO_USER\`).
+Requiere: \`build-essential\`, \`pkg-config\`, \`libgtk-3-dev\`, \`zenity\` (Ubuntu/Debian: \`sudo apt install build-essential pkg-config libgtk-3-dev zenity\`).
+
+### Instalación manual
+
+\`\`\`bash
+make && make powergov-ui
+sudo make install-service
+sudo make install-ui install-ui-policy install-ui-helper
+\`\`\`
 EOF
 )"
 

@@ -182,6 +182,9 @@ pack: clean icons
 	@cp -r $(PACK_DIRS) $(DIST_DIR)/
 	@mkdir -p $(DIST_DIR)/ui
 	@cp $(PACK_UI) $(DIST_DIR)/ui/
+	@cp scripts/install-powergov.sh $(DIST_DIR)/install-powergov.sh
+	@cp data/Install-PowerGov.desktop $(DIST_DIR)/Install-PowerGov.desktop
+	@chmod +x $(DIST_DIR)/install-powergov.sh
 	@mkdir -p dist
 	@tar -czf $(DIST_TAR) -C dist $(DIST_NAME)
 	@echo "packed $(DIST_TAR)"
