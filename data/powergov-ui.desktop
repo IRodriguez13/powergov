@@ -1,7 +1,9 @@
 [Desktop Entry]
 Type=Application
 Name=PowerGov
-Comment=Gestión de energía para portátiles Linux
+Name[es]=PowerGov
+Comment=Linux laptop power management
+Comment[es]=Gestión de energía para portátiles Linux
 Exec=powergov-ui
 Icon=powergov
 Categories=System;Settings;

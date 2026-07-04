@@ -23,11 +23,10 @@ make pack
 NOTES="$(cat <<EOF
 ## powergov ${VERSION}
 
-- Daemon modular (core, CPU, power, platform, runtime PM, métricas)
-- \`libpowergov.so\` + socket Unix para clientes
-- UI GTK nativa (\`powergov-ui\`): perfiles, batería, diagnóstico dev
-- Icono, entrada desktop y Polkit (\`org.powergov.dev-mode\`)
-- Empaquetado: \`make pack\` → \`dist/powergov-${VERSION}.tar.gz\`
+- UI GTK: pestañas Perfil/Diagnóstico, log y métricas sin reset de scroll
+- Modo dev: botón «Volver a modo usuario»; acceso directo en el escritorio al instalar
+- i18n EN/ES (inglés por defecto) con botón EN/ES en la barra de título
+- Icono, \`.desktop\`, Polkit y \`libpowergov.so\`
 
 ### Instalación
 
@@ -39,6 +38,8 @@ sudo make install-service
 make powergov-ui
 sudo make install-ui install-ui-policy install-ui-helper
 \`\`\`
+
+El acceso directo en el escritorio se crea automáticamente (\`sudo make install-ui\` usa \`\$SUDO_USER\`).
 EOF
 )"
 

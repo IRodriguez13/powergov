@@ -1,0 +1,89 @@
+/*
+ * i18n.h - UI strings (English default, Spanish optional)
+ * Copyright (C) 2026 Iván Ezequiel Rodriguez
+ * License: GPLv3+
+ */
+#pragma once
+
+#include <powergov/client.h>
+
+typedef enum
+{
+    PG_TR_CONNECTING,
+    PG_TR_TAB_PROFILE,
+    PG_TR_TAB_DIAGNOSTIC,
+    PG_TR_TAB_SYSTEM,
+    PG_TR_TAB_CPU,
+    PG_TR_TAB_COMPAT,
+    PG_TR_TAB_METRICS,
+    PG_TR_TAB_LOG,
+    PG_TR_BTN_DEV_MODE,
+    PG_TR_BTN_USER_MODE,
+    PG_TR_BTN_START_SERVICE,
+    PG_TR_BTN_STOP,
+    PG_TR_BTN_RESTART,
+    PG_TR_LABEL_BATTERY_PROTECT,
+    PG_TR_LABEL_RECENT_ACTIVITY,
+    PG_TR_DEV_LOCK_BANNER,
+    PG_TR_STATUS_NO_RESPOND,
+    PG_TR_STATUS_NOT_RUNNING,
+    PG_TR_STATUS_READ_ERROR,
+    PG_TR_STATUS_ACTIVE_PROFILE,
+    PG_TR_POWER_PLUGGED,
+    PG_TR_POWER_BATTERY,
+    PG_TR_ERR_MANAGE_SERVICE,
+    PG_TR_LOG_SERVICE_REQUESTED,
+    PG_TR_SVC_ACTION_START,
+    PG_TR_SVC_ACTION_STOP,
+    PG_TR_SVC_ACTION_RESTART,
+    PG_TR_ERR_PROFILE_CHANGE,
+    PG_TR_ERR_PROFILE_VERIFY,
+    PG_TR_LOG_PROFILE_FAIL,
+    PG_TR_LOG_PROFILE_UNCONFIRMED,
+    PG_TR_LOG_PROFILE_OK,
+    PG_TR_FB_PROFILE_ACTIVE,
+    PG_TR_ERR_BATTERY_UPDATE,
+    PG_TR_ERR_BATTERY_VERIFY,
+    PG_TR_LOG_BATTERY_FAIL,
+    PG_TR_LOG_BATTERY_UNCONFIRMED,
+    PG_TR_LOG_BATTERY_ON,
+    PG_TR_FB_BATTERY_ON,
+    PG_TR_LOG_BATTERY_OFF,
+    PG_TR_FB_BATTERY_OFF,
+    PG_TR_LOG_DEV_ON,
+    PG_TR_FB_DEV_ON,
+    PG_TR_LOG_DEV_OFF,
+    PG_TR_FB_DEV_OFF,
+    PG_TR_ERR_DEV_DENIED,
+    PG_TR_LOG_DEV_DENIED,
+    PG_TR_ERR_DEV_INCOMPLETE,
+    PG_TR_LOG_DEV_INCOMPLETE,
+    PG_TR_ERR_DEV_NO_PKEXEC,
+    PG_TR_LOG_DEV_UNAVAILABLE,
+    PG_TR_ERR_DEV_DIALOG,
+    PG_TR_LOG_DEV_PERM_ERROR,
+    PG_TR_NO_LOG,
+    PG_TR_SYS_FMT,
+    PG_TR_CPU_FMT,
+    PG_TR_COMPAT_SCORE_FMT,
+    PG_TR_COMPAT_ROW_FMT,
+    PG_TR_YES,
+    PG_TR_NO,
+    PG_TR_ACTIVE,
+    PG_TR_INACTIVE,
+    PG_TR_LANG_TOOLTIP,
+    PG_TR_COUNT
+} PgTr;
+
+void pg_i18n_init(void);
+int pg_i18n_is_english(void);
+void pg_i18n_set_english(int english);
+void pg_i18n_toggle(void);
+const char *pg_lang_button_label(void);
+const char *pg_lang_button_tooltip(void);
+const char *pg_tr(PgTr id);
+const char *pg_user_mode_title(powergov_user_mode_t mode);
+const char *pg_user_mode_subtitle(powergov_user_mode_t mode);
+const char *pg_service_action_label(const char *systemctl_action);
+
+#define _(id) pg_tr(id)

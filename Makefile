@@ -56,7 +56,7 @@ ICON_ROOT = /usr/share/icons/hicolor
 DESKTOP_FILE = data/powergov-ui.desktop
 DESKTOP_DIR = /usr/share/applications
 PACK_DIRS = VERSION Makefile README.md main.c src include core cpu power platform devices log metrics config client data Documentation completions doc service scripts .gitignore
-PACK_UI = ui/main.c ui/README.md
+PACK_UI = ui/main.c ui/i18n.c ui/i18n.h ui/README.md
 
 LIB_OBJ = client/libpowergov.o include/powergov/types_lib.o
 
@@ -74,9 +74,9 @@ $(LIBPOWERGOV): $(LIB_OBJ)
 client/%.o: client/%.c
 	$(CC) $(CFLAGS) -fPIC -c $< -o $@
 
-$(UI_BIN): ui/main.c $(LIBPOWERGOV)
+$(UI_BIN): ui/main.c ui/i18n.c $(LIBPOWERGOV)
 	@test -n "$(GTK_LIBS)" || (echo "gtk+-3.0 no encontrado (pkg-config)" && exit 1)
-	$(CC) $(CFLAGS) $(GTK_CFLAGS) -o $(UI_BIN) ui/main.c \
+	$(CC) $(CFLAGS) $(GTK_CFLAGS) -o $(UI_BIN) ui/main.c ui/i18n.c \
 		-L. -lpowergov -Wl,-rpath,'$$ORIGIN' $(GTK_LIBS)
 
 install: install-bin install-man install-completion install-lib install-ui-policy
@@ -88,6 +88,19 @@ install-lib: $(LIBPOWERGOV)
 
 install-ui: $(UI_BIN) install-lib install-ui-policy install-ui-helper install-ui-icons install-ui-desktop
 	install -D -m 755 $(UI_BIN) /usr/local/bin/$(UI_BIN)
+	@$(MAKE) install-ui-shortcut
+
+install-ui-shortcut:
+	@chmod +x scripts/install-desktop-shortcut.sh
+	@if [ -n "$$SUDO_USER" ] && [ "$$(id -u)" -eq 0 ]; then \
+		sudo -u "$$SUDO_USER" env HOME="$$(getent passwd "$$SUDO_USER" | cut -d: -f6)" \
+			XDG_DESKTOP_DIR="$${XDG_DESKTOP_DIR:-}" \
+			./scripts/install-desktop-shortcut.sh $(DESKTOP_DIR)/powergov-ui.desktop; \
+	elif [ "$$(id -u)" -ne 0 ]; then \
+		./scripts/install-desktop-shortcut.sh $(DESKTOP_DIR)/powergov-ui.desktop; \
+	else \
+		echo "install-ui-shortcut: ejecutá con sudo desde tu usuario (SUDO_USER)." >&2; \
+	fi
 
 install-ui-icons:
 	@for sz in 16 24 32 48 64 128 256; do \
@@ -190,7 +203,7 @@ ui: $(UI_BIN)
 ui-run: $(UI_BIN)
 	./$(UI_BIN)
 
-.PHONY: all install install-bin install-man install-completion install-service install-lib install-ui install-ui-helper install-ui-policy install-ui-icons install-ui-desktop icons stop uninstall uninstall-docs uninstall-service service-status pack extract release ui ui-run clean
+.PHONY: all install install-bin install-man install-completion install-service install-lib install-ui install-ui-helper install-ui-policy install-ui-icons install-ui-desktop install-ui-shortcut icons stop uninstall uninstall-docs uninstall-service service-status pack extract release ui ui-run clean
 
 clean:
 	rm -f $(OBJ) client/libpowergov.o include/powergov/types_lib.o $(TARGET) $(LIBPOWERGOV) $(UI_BIN)

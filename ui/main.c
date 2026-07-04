@@ -4,6 +4,7 @@
  * License: GPLv3+
  */
 #include <powergov/client.h>
+#include "i18n.h"
 #include <gtk/gtk.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,7 +18,6 @@
 #define FEEDBACK_MS          5000
 #define ACTION_LOG_MAX_LINES 40
 #define DEV_LOG_UI_MAX_LINES 500
-#define DEV_LOG_MARKER_SZ    640
 #define POLKIT_DEV_MODE      "org.powergov.dev-mode"
 #define POLKIT_MANAGE_SVC    "org.powergov.manage-service"
 #define POWERGOV_PKEXEC      "/usr/bin/pkexec"
@@ -79,6 +79,9 @@ struct _AppCtx
     GtkWidget *dev_notebook;
     GtkWidget *dev_lock_banner;
     GtkWidget *dev_btn;
+    GtkWidget *lang_btn;
+    GtkWidget *battery_label;
+    GtkWidget *activity_label;
     GtkWidget *service_box;
     GtkWidget *start_btn;
     GtkWidget *stop_btn;
@@ -96,9 +99,11 @@ struct _AppCtx
     int daemon_up;
     int dev_unlocked;
     int dev_log_initialized;
+    int metrics_initialized;
     int refresh_busy;
     int ui_sync;
-    char dev_log_last_line[DEV_LOG_MARKER_SZ];
+    char dev_log_last_snapshot[POWERGOV_SOCK_LOG_SZ + 1];
+    char metrics_last_snapshot[POWERGOV_SOCK_METRICS_SZ + 1];
 };
 
 static int pidfile_daemon_alive(void)
@@ -200,9 +205,9 @@ static void update_dev_tab_access(AppCtx *ctx)
     gtk_widget_set_sensitive(ctx->dev_notebook, ctx->dev_unlocked);
     gtk_widget_set_visible(ctx->dev_lock_banner, !ctx->dev_unlocked);
     if (ctx->dev_unlocked)
-        gtk_button_set_label(GTK_BUTTON(ctx->dev_btn), "Abrir diagnóstico");
+        gtk_button_set_label(GTK_BUTTON(ctx->dev_btn), _(PG_TR_BTN_USER_MODE));
     else
-        gtk_button_set_label(GTK_BUTTON(ctx->dev_btn), "Modo desarrollador");
+        gtk_button_set_label(GTK_BUTTON(ctx->dev_btn), _(PG_TR_BTN_DEV_MODE));
 }
 
 static void fill_text_view(GtkWidget *view, const char *text)
@@ -215,48 +220,26 @@ static void fill_text_view(GtkWidget *view, const char *text)
     gtk_text_buffer_set_text(buf, text ? text : "", -1);
 }
 
-static void copy_last_log_line(const char *text, char *dst, size_t dst_sz)
-{
-    const char *p;
-    const char *last;
-    size_t len;
-
-    if (!dst || dst_sz == 0)
-        return;
-
-    dst[0] = '\0';
-    if (!text || !text[0])
-        return;
-
-    last = text;
-    for (p = text; *p; p++)
-    {
-        if (*p == '\n')
-            last = p + 1;
-    }
-
-    snprintf(dst, dst_sz, "%s", last);
-    len = strlen(dst);
-    while (len > 0 && (dst[len - 1] == '\n' || dst[len - 1] == '\r'))
-        dst[--len] = '\0';
-}
-
-static int dev_log_view_at_bottom(GtkWidget *view)
+static GtkAdjustment *text_view_vadj(GtkWidget *view)
 {
     GtkWidget *parent;
+
+    if (!view)
+        return NULL;
+    parent = gtk_widget_get_parent(view);
+    if (!parent || !GTK_IS_SCROLLED_WINDOW(parent))
+        return NULL;
+    return gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(parent));
+}
+
+static int text_view_at_bottom(GtkWidget *view)
+{
     GtkAdjustment *vadj;
     gdouble upper;
     gdouble page;
     gdouble value;
 
-    if (!view)
-        return 1;
-
-    parent = gtk_widget_get_parent(view);
-    if (!parent || !GTK_IS_SCROLLED_WINDOW(parent))
-        return 1;
-
-    vadj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(parent));
+    vadj = text_view_vadj(view);
     if (!vadj)
         return 1;
 
@@ -264,67 +247,195 @@ static int dev_log_view_at_bottom(GtkWidget *view)
     page = gtk_adjustment_get_page_size(vadj);
     value = gtk_adjustment_get_value(vadj);
 
-    return (value >= upper - page - 4.0);
+    if (upper <= page + 1.0)
+        return 1;
+
+    return (value >= upper - page - 8.0);
 }
 
-static void dev_log_view_scroll_end(GtkWidget *view)
+static void text_view_scroll_end(GtkWidget *view)
 {
     GtkTextBuffer *buf;
     GtkTextIter end;
+    GtkTextMark *mark;
 
     if (!view)
         return;
 
     buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
     gtk_text_buffer_get_end_iter(buf, &end);
-    gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(view), &end, 0.0, FALSE, 0.0, 1.0);
+    mark = gtk_text_buffer_create_mark(buf, NULL, &end, FALSE);
+    gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(view), mark);
+    gtk_text_buffer_delete_mark(buf, mark);
 }
 
-static void dev_log_view_append(GtkWidget *view, const char *text)
+static int text_view_first_visible_line(GtkWidget *view)
+{
+    GdkRectangle rect;
+    GtkTextIter iter;
+
+    if (!view)
+        return 0;
+
+    gtk_text_view_get_visible_rect(GTK_TEXT_VIEW(view), &rect);
+    gtk_text_view_get_line_at_y(GTK_TEXT_VIEW(view), &iter, rect.y, NULL);
+    return gtk_text_iter_get_line(&iter);
+}
+
+static void text_view_scroll_to_line(GtkWidget *view, int line)
+{
+    GtkTextBuffer *buf;
+    GtkTextIter iter;
+    int max_line;
+
+    if (!view)
+        return;
+
+    buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
+    max_line = gtk_text_buffer_get_line_count(buf) - 1;
+    if (line < 0)
+        line = 0;
+    if (line > max_line)
+        line = max_line;
+
+    gtk_text_buffer_get_iter_at_line(buf, &iter, line);
+    gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(view), &iter,
+                                 0.0, FALSE, 0.0, 0.0);
+}
+
+static void update_panel_text_view(GtkWidget *view, const char *text,
+                                   char *last_snap, size_t snap_sz,
+                                   int *initialized)
+{
+    int at_bottom;
+    int was_init;
+    int visible_line;
+
+    if (!view || !text)
+        return;
+
+    if (*initialized && strcmp(text, last_snap) == 0)
+        return;
+
+    was_init = *initialized;
+    at_bottom = text_view_at_bottom(view);
+    visible_line = was_init && !at_bottom ? text_view_first_visible_line(view) : 0;
+
+    fill_text_view(view, text);
+    g_strlcpy(last_snap, text, snap_sz);
+    *initialized = 1;
+
+    if (at_bottom)
+        text_view_scroll_end(view);
+    else if (was_init)
+        text_view_scroll_to_line(view, visible_line);
+}
+
+static GtkAdjustment *dev_log_view_vadj(GtkWidget *view)
+{
+    return text_view_vadj(view);
+}
+
+static int dev_log_view_at_bottom(GtkWidget *view)
+{
+    return text_view_at_bottom(view);
+}
+
+static void dev_log_view_scroll_end(GtkWidget *view)
+{
+    text_view_scroll_end(view);
+}
+
+static size_t snapshot_overlap(const char *prev, const char *next)
+{
+    size_t plen;
+    size_t nlen;
+    size_t max_ov;
+    size_t i;
+
+    if (!prev || !next || !prev[0] || !next[0])
+        return 0;
+
+    plen = strlen(prev);
+    nlen = strlen(next);
+    max_ov = plen < nlen ? plen : nlen;
+
+    for (i = max_ov; i > 0; i--)
+    {
+        if (memcmp(prev + plen - i, next, i) == 0)
+            return i;
+    }
+    return 0;
+}
+
+static void dev_log_view_append(GtkWidget *view, const char *text, int trim_old)
 {
     GtkTextBuffer *buf;
     GtkTextIter end;
     int lines;
+    GtkAdjustment *vadj;
+    gdouble scroll_before;
+    int had_scroll;
 
     if (!view || !text || !text[0])
         return;
+
+    vadj = dev_log_view_vadj(view);
+    had_scroll = (vadj && gtk_adjustment_get_upper(vadj) >
+                  gtk_adjustment_get_page_size(vadj) + 1.0);
+    scroll_before = vadj ? gtk_adjustment_get_value(vadj) : 0.0;
 
     buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
     gtk_text_buffer_get_end_iter(buf, &end);
     gtk_text_buffer_insert(buf, &end, text, -1);
 
-    lines = gtk_text_buffer_get_line_count(buf);
-    if (lines > DEV_LOG_UI_MAX_LINES)
+    if (trim_old)
     {
-        GtkTextIter start;
-        GtkTextIter cut;
+        lines = gtk_text_buffer_get_line_count(buf);
+        if (lines > DEV_LOG_UI_MAX_LINES)
+        {
+            GtkTextIter start;
+            GtkTextIter cut;
+            int drop = lines - DEV_LOG_UI_MAX_LINES;
 
-        gtk_text_buffer_get_iter_at_line(buf, &start, 0);
-        gtk_text_buffer_get_iter_at_line(buf, &cut, lines - DEV_LOG_UI_MAX_LINES);
-        gtk_text_buffer_delete(buf, &start, &cut);
+            gtk_text_buffer_get_iter_at_line(buf, &start, 0);
+            gtk_text_buffer_get_iter_at_line(buf, &cut, drop);
+            gtk_text_buffer_delete(buf, &start, &cut);
+        }
+    }
+    else if (had_scroll && vadj)
+    {
+        gtk_adjustment_set_value(vadj, scroll_before);
     }
 }
 
 static void update_dev_log_view(AppCtx *ctx, const char *new_text)
 {
     const char *text;
-    const char *found;
-    const char *scan;
+    size_t overlap;
     int at_bottom;
+    gdouble saved_scroll = 0.0;
+    GtkAdjustment *vadj;
 
     if (!ctx || !ctx->log_view)
         return;
 
     text = new_text ? new_text : "";
+    vadj = dev_log_view_vadj(ctx->log_view);
     at_bottom = dev_log_view_at_bottom(ctx->log_view);
+    if (vadj && !at_bottom)
+        saved_scroll = gtk_adjustment_get_value(vadj);
 
-    if (!ctx->dev_log_initialized || ctx->dev_log_last_line[0] == '\0')
+    if (!ctx->dev_log_initialized)
     {
-        fill_text_view(ctx->log_view, text);
-        copy_last_log_line(text, ctx->dev_log_last_line,
-                           sizeof(ctx->dev_log_last_line));
-        ctx->dev_log_initialized = text[0] != '\0';
-        if (at_bottom || !ctx->dev_log_initialized)
+        if (text[0] != '\0')
+        {
+            fill_text_view(ctx->log_view, text);
+            g_strlcpy(ctx->dev_log_last_snapshot, text,
+                      sizeof(ctx->dev_log_last_snapshot));
+            ctx->dev_log_initialized = 1;
+        }
+        if (at_bottom)
             dev_log_view_scroll_end(ctx->log_view);
         return;
     }
@@ -332,37 +443,28 @@ static void update_dev_log_view(AppCtx *ctx, const char *new_text)
     if (text[0] == '\0')
         return;
 
-    found = NULL;
-    scan = text;
-    while ((scan = strstr(scan, ctx->dev_log_last_line)))
+    if (strcmp(text, ctx->dev_log_last_snapshot) == 0)
+        return;
+
+    overlap = snapshot_overlap(ctx->dev_log_last_snapshot, text);
+    if (overlap > 0)
     {
-        found = scan;
-        scan += strlen(ctx->dev_log_last_line);
-    }
-
-    if (found)
-    {
-        const char *append_start = found + strlen(ctx->dev_log_last_line);
-
-        if (*append_start == '\n')
-            append_start++;
-        if (*append_start == '\0')
-            return;
-
-        dev_log_view_append(ctx->log_view, append_start);
-        copy_last_log_line(text, ctx->dev_log_last_line,
-                           sizeof(ctx->dev_log_last_line));
+        if (text[overlap] != '\0')
+            dev_log_view_append(ctx->log_view, text + overlap, at_bottom);
     }
     else
     {
-        dev_log_view_append(ctx->log_view, "\n---\n");
-        dev_log_view_append(ctx->log_view, text);
-        copy_last_log_line(text, ctx->dev_log_last_line,
-                           sizeof(ctx->dev_log_last_line));
+        dev_log_view_append(ctx->log_view, "\n---\n", at_bottom);
+        dev_log_view_append(ctx->log_view, text, at_bottom);
     }
+
+    g_strlcpy(ctx->dev_log_last_snapshot, text,
+              sizeof(ctx->dev_log_last_snapshot));
 
     if (at_bottom)
         dev_log_view_scroll_end(ctx->log_view);
+    else if (vadj)
+        gtk_adjustment_set_value(vadj, saved_scroll);
 }
 
 static void append_action_log(AppCtx *ctx, const char *line)
@@ -438,7 +540,9 @@ static void clear_dev_views(AppCtx *ctx)
     fill_text_view(ctx->metrics_view, "");
     fill_text_view(ctx->log_view, "");
     ctx->dev_log_initialized = 0;
-    ctx->dev_log_last_line[0] = '\0';
+    ctx->dev_log_last_snapshot[0] = '\0';
+    ctx->metrics_initialized = 0;
+    ctx->metrics_last_snapshot[0] = '\0';
 }
 
 static void run_polkit_service(AppCtx *ctx, const char *action)
@@ -451,13 +555,14 @@ static void run_polkit_service(AppCtx *ctx, const char *action)
              POWERGOV_PKEXEC, action);
     if (!g_spawn_command_line_async(cmd, &err))
     {
-        show_feedback(ctx, 0, "No se pudo gestionar el servicio");
+        show_feedback(ctx, 0, _(PG_TR_ERR_MANAGE_SERVICE));
         g_clear_error(&err);
     }
     else
     {
-        char msg[64];
-        snprintf(msg, sizeof(msg), "Se solicitó %s el servicio", action);
+        char msg[96];
+        snprintf(msg, sizeof(msg), _(PG_TR_LOG_SERVICE_REQUESTED),
+                 pg_service_action_label(action));
         append_action_log(ctx, msg);
     }
 }
@@ -494,41 +599,35 @@ static void apply_dev_panels(AppCtx *ctx, const UiSnapshot *s)
 
     if (s->sys_ok)
     {
-        snprintf(block, sizeof(block),
-                 "SO: %s\nKernel: %s\npowergov: %s\nsystemd: %s\nPPD activo: %s",
+        snprintf(block, sizeof(block), _(PG_TR_SYS_FMT),
                  s->sys.pretty_name, s->sys.kernel, s->sys.powergov_version,
-                 s->sys.systemd_active ? "activo" : "inactivo",
-                 s->sys.ppd_detected ? "sí" : "no");
+                 s->sys.systemd_active ? _(PG_TR_ACTIVE) : _(PG_TR_INACTIVE),
+                 s->sys.ppd_detected ? _(PG_TR_YES) : _(PG_TR_NO));
         fill_text_view(ctx->sys_view, block);
     }
 
     if (s->cpu_ok)
     {
-        snprintf(block, sizeof(block),
-                 "Modelo: %s\nCPUs: %d\nDriver: %s\nGovernor: %s\n"
-                 "Governors: %s\nEPP: %s (%s)\nTurbo: %s\n"
-                 "Freq max HW: %s kHz\nFreq max scaling: %s kHz\n"
-                 "Platform profile: %s\nRAPL: %s",
+        snprintf(block, sizeof(block), _(PG_TR_CPU_FMT),
                  s->cpu.model, s->cpu.cpu_count, s->cpu.scaling_driver,
                  s->cpu.governor, s->cpu.governors_avail,
                  s->cpu.epp, s->cpu.epp_available ? "ok" : "n/a",
                  s->cpu.turbo_on == 1 ? "on" : (s->cpu.turbo_on == 0 ? "off" : "?"),
                  s->cpu.freq_hw_max, s->cpu.freq_scaling_max,
                  s->cpu.platform_profile[0] ? s->cpu.platform_profile : "—",
-                 s->cpu.rapl_available ? "sí" : "no");
+                 s->cpu.rapl_available ? _(PG_TR_YES) : _(PG_TR_NO));
         fill_text_view(ctx->cpu_view, block);
     }
 
     if (s->compat_ok)
     {
         block[0] = '\0';
-        snprintf(line, sizeof(line), "Score: %d — %s\n\n",
+        snprintf(line, sizeof(line), _(PG_TR_COMPAT_SCORE_FMT),
                  s->compat.adaptability_score, s->compat.summary);
         strncat(block, line, sizeof(block) - strlen(block) - 1);
         for (i = 0; i < POWERGOV_FEATURE_COUNT; i++)
         {
-            snprintf(line, sizeof(line),
-                     "%-12s [%s] hw=%d en=%d — %s\n",
+            snprintf(line, sizeof(line), _(PG_TR_COMPAT_ROW_FMT),
                      s->compat.rows[i].name,
                      powergov_compat_state_str(s->compat.rows[i].state),
                      s->compat.rows[i].hw_available,
@@ -540,14 +639,19 @@ static void apply_dev_panels(AppCtx *ctx, const UiSnapshot *s)
     }
 
     if (s->metrics_ok)
-        fill_text_view(ctx->metrics_view, s->metrics.text);
+    {
+        update_panel_text_view(ctx->metrics_view, s->metrics.text,
+                               ctx->metrics_last_snapshot,
+                               sizeof(ctx->metrics_last_snapshot),
+                               &ctx->metrics_initialized);
+    }
 
     if (s->log_ok)
     {
         if (s->log.ok)
             update_dev_log_view(ctx, s->log.text);
         else if (!ctx->dev_log_initialized)
-            update_dev_log_view(ctx, "(sin log)");
+            update_dev_log_view(ctx, _(PG_TR_NO_LOG));
     }
 }
 
@@ -563,8 +667,8 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
     {
         gtk_label_set_text(GTK_LABEL(ctx->status_label),
                            s->systemd_active
-                               ? "PowerGov no responde — prueba reiniciar el servicio"
-                               : "PowerGov no está en ejecución");
+                               ? _(PG_TR_STATUS_NO_RESPOND)
+                               : _(PG_TR_STATUS_NOT_RUNNING));
         gtk_label_set_text(GTK_LABEL(ctx->power_label), "");
         set_mode_sensitive(ctx, FALSE);
         update_service_buttons(ctx, s->systemd_active);
@@ -577,7 +681,7 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
     if (!s->st_ok)
     {
         gtk_label_set_text(GTK_LABEL(ctx->status_label),
-                           "Error leyendo estado del daemon");
+                           _(PG_TR_STATUS_READ_ERROR));
         g_free(s);
         return;
     }
@@ -585,15 +689,15 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
     set_mode_sensitive(ctx, TRUE);
     update_service_buttons(ctx, 1);
 
-    snprintf(line, sizeof(line), "Perfil activo: %s",
-             powergov_user_mode_title((powergov_user_mode_t)s->st.user_mode));
+    snprintf(line, sizeof(line), _(PG_TR_STATUS_ACTIVE_PROFILE),
+             pg_user_mode_title((powergov_user_mode_t)s->st.user_mode));
     gtk_label_set_text(GTK_LABEL(ctx->status_label), line);
 
     if (s->st.battery_pct >= 0)
     {
         const char *src = (s->st.power_source == POWERGOV_POWER_AC)
-                              ? "Enchufado"
-                              : "Batería";
+                              ? _(PG_TR_POWER_PLUGGED)
+                              : _(PG_TR_POWER_BATTERY);
         snprintf(line, sizeof(line), "%s — %d%%", src, s->st.battery_pct);
     }
     else
@@ -773,26 +877,23 @@ static void user_action_done(GObject *src, GAsyncResult *res, gpointer data)
 
     if (r->kind == UI_ACT_SET_MODE)
     {
-        const char *title = powergov_user_mode_title((powergov_user_mode_t)r->mode);
+        const char *title = pg_user_mode_title((powergov_user_mode_t)r->mode);
 
         if (!r->send_ok)
         {
-            snprintf(logline, sizeof(logline),
-                     "No se pudo cambiar a «%s»", title);
-            show_feedback(ctx, 0,
-                          "No se pudo cambiar el perfil. ¿Está activo PowerGov?");
+            snprintf(logline, sizeof(logline), _(PG_TR_LOG_PROFILE_FAIL), title);
+            show_feedback(ctx, 0, _(PG_TR_ERR_PROFILE_CHANGE));
         }
         else if (!r->verify_ok)
         {
             snprintf(logline, sizeof(logline),
-                     "«%s» no quedó confirmado", title);
-            show_feedback(ctx, 0,
-                          "El cambio de perfil no se confirmó. Intentá de nuevo.");
+                     _(PG_TR_LOG_PROFILE_UNCONFIRMED), title);
+            show_feedback(ctx, 0, _(PG_TR_ERR_PROFILE_VERIFY));
         }
         else
         {
-            snprintf(logline, sizeof(logline), "Perfil «%s» activado", title);
-            snprintf(feedback, sizeof(feedback), "Perfil activo: %s", title);
+            snprintf(logline, sizeof(logline), _(PG_TR_LOG_PROFILE_OK), title);
+            snprintf(feedback, sizeof(feedback), _(PG_TR_FB_PROFILE_ACTIVE), title);
             show_feedback(ctx, 1, feedback);
         }
     }
@@ -800,29 +901,27 @@ static void user_action_done(GObject *src, GAsyncResult *res, gpointer data)
     {
         if (!r->send_ok)
         {
-            snprintf(logline, sizeof(logline),
-                     "No se pudo cambiar la protección de batería");
-            show_feedback(ctx, 0, "No se pudo actualizar la protección de batería");
+            snprintf(logline, sizeof(logline), "%s", _(PG_TR_LOG_BATTERY_FAIL));
+            show_feedback(ctx, 0, _(PG_TR_ERR_BATTERY_UPDATE));
         }
         else if (!r->verify_ok)
         {
-            snprintf(logline, sizeof(logline),
-                     "Protección de batería no confirmada");
-            show_feedback(ctx, 0, "El cambio de batería no se confirmó");
+            snprintf(logline, sizeof(logline), "%s",
+                     _(PG_TR_LOG_BATTERY_UNCONFIRMED));
+            show_feedback(ctx, 0, _(PG_TR_ERR_BATTERY_VERIFY));
         }
         else if (r->battery_on)
         {
-            snprintf(logline, sizeof(logline),
-                     "Protección de batería activa al %d%%", r->battery_thr);
-            snprintf(feedback, sizeof(feedback),
-                     "Protección activa al %d%%", r->battery_thr);
+            snprintf(logline, sizeof(logline), _(PG_TR_LOG_BATTERY_ON),
+                     r->battery_thr);
+            snprintf(feedback, sizeof(feedback), _(PG_TR_FB_BATTERY_ON),
+                     r->battery_thr);
             show_feedback(ctx, 1, feedback);
         }
         else
         {
-            snprintf(logline, sizeof(logline),
-                     "Protección de batería desactivada");
-            show_feedback(ctx, 1, "Protección de batería desactivada");
+            snprintf(logline, sizeof(logline), "%s", _(PG_TR_LOG_BATTERY_OFF));
+            show_feedback(ctx, 1, _(PG_TR_FB_BATTERY_OFF));
         }
     }
 
@@ -845,9 +944,22 @@ static void enter_dev_mode(AppCtx *ctx)
 {
     ctx->dev_unlocked = 1;
     update_dev_tab_access(ctx);
+    update_service_buttons(ctx, ctx->daemon_up);
     gtk_notebook_set_current_page(GTK_NOTEBOOK(ctx->main_notebook), 1);
-    append_action_log(ctx, "Diagnóstico desbloqueado");
-    show_feedback(ctx, 1, "Diagnóstico disponible en la pestaña correspondiente");
+    append_action_log(ctx, _(PG_TR_LOG_DEV_ON));
+    show_feedback(ctx, 1, _(PG_TR_FB_DEV_ON));
+    refresh_async(ctx);
+}
+
+static void exit_dev_mode(AppCtx *ctx)
+{
+    ctx->dev_unlocked = 0;
+    update_dev_tab_access(ctx);
+    update_service_buttons(ctx, ctx->daemon_up);
+    clear_dev_views(ctx);
+    gtk_notebook_set_current_page(GTK_NOTEBOOK(ctx->main_notebook), 0);
+    append_action_log(ctx, _(PG_TR_LOG_DEV_OFF));
+    show_feedback(ctx, 1, _(PG_TR_FB_DEV_OFF));
     refresh_async(ctx);
 }
 
@@ -865,8 +977,8 @@ static void dev_auth_child_exit(GPid pid, gint status, gpointer data)
         return;
     }
 
-    show_feedback(ctx, 0, "Acceso al diagnóstico cancelado o denegado");
-    append_action_log(ctx, "Diagnóstico no desbloqueado");
+    show_feedback(ctx, 0, _(PG_TR_ERR_DEV_DENIED));
+    append_action_log(ctx, _(PG_TR_LOG_DEV_DENIED));
     g_clear_error(&err);
 }
 
@@ -882,16 +994,15 @@ static void start_dev_auth_async(AppCtx *ctx)
 
     if (access(POWERGOV_DEV_AUTH, X_OK) != 0)
     {
-        show_feedback(ctx, 0,
-                      "PowerGov no está instalado por completo en este equipo");
-        append_action_log(ctx, "Diagnóstico no disponible (instalación incompleta)");
+        show_feedback(ctx, 0, _(PG_TR_ERR_DEV_INCOMPLETE));
+        append_action_log(ctx, _(PG_TR_LOG_DEV_INCOMPLETE));
         return;
     }
 
     if (access(POWERGOV_PKEXEC, X_OK) != 0)
     {
-        show_feedback(ctx, 0, "No se pueden solicitar permisos de administrador");
-        append_action_log(ctx, "Diagnóstico no disponible");
+        show_feedback(ctx, 0, _(PG_TR_ERR_DEV_NO_PKEXEC));
+        append_action_log(ctx, _(PG_TR_LOG_DEV_UNAVAILABLE));
         return;
     }
 
@@ -899,8 +1010,8 @@ static void start_dev_auth_async(AppCtx *ctx)
                        G_SPAWN_DO_NOT_REAP_CHILD,
                        NULL, NULL, &pid, &err))
     {
-        show_feedback(ctx, 0, "No se pudo abrir el diálogo de permisos");
-        append_action_log(ctx, "Error al solicitar permisos");
+        show_feedback(ctx, 0, _(PG_TR_ERR_DEV_DIALOG));
+        append_action_log(ctx, _(PG_TR_LOG_DEV_PERM_ERROR));
         g_clear_error(&err);
         return;
     }
@@ -982,7 +1093,7 @@ static void on_dev_btn_clicked(GtkButton *btn, gpointer data)
 
     if (ctx->dev_unlocked)
     {
-        gtk_notebook_set_current_page(GTK_NOTEBOOK(ctx->main_notebook), 1);
+        exit_dev_mode(ctx);
         return;
     }
 
@@ -1045,8 +1156,8 @@ static GtkWidget *mode_button(AppCtx *ctx, powergov_user_mode_t mode,
 
     gtk_label_set_markup(GTK_LABEL(title),
                          g_markup_printf_escaped("<b>%s</b>",
-                                                   powergov_user_mode_title(mode)));
-    gtk_label_set_text(GTK_LABEL(sub), powergov_user_mode_subtitle(mode));
+                                                   pg_user_mode_title(mode)));
+    gtk_label_set_text(GTK_LABEL(sub), pg_user_mode_subtitle(mode));
     gtk_widget_set_halign(title, GTK_ALIGN_START);
     gtk_widget_set_halign(sub, GTK_ALIGN_START);
     gtk_box_pack_start(GTK_BOX(box), title, FALSE, FALSE, 0);
@@ -1061,10 +1172,122 @@ static GtkWidget *mode_button(AppCtx *ctx, powergov_user_mode_t mode,
     gtk_widget_set_halign(btn, GTK_ALIGN_START);
     gtk_container_add(GTK_CONTAINER(btn), box);
     g_object_set_data(G_OBJECT(btn), "mode", GINT_TO_POINTER((int)mode));
+    g_object_set_data(G_OBJECT(btn), "mode_title", title);
+    g_object_set_data(G_OBJECT(btn), "mode_sub", sub);
     ctx->mode_handlers[(int)mode] = g_signal_connect(
         btn, "toggled", G_CALLBACK(on_mode_toggled), ctx);
     ctx->mode_buttons[(int)mode] = btn;
     return btn;
+}
+
+static void notebook_tab_set_text(GtkNotebook *nb, int page, const char *text)
+{
+    GtkWidget *child;
+    GtkWidget *tab;
+
+    if (!nb || !text)
+        return;
+
+    child = gtk_notebook_get_nth_page(nb, page);
+    if (!child)
+        return;
+
+    tab = gtk_notebook_get_tab_label(nb, child);
+    if (GTK_IS_LABEL(tab))
+        gtk_label_set_text(GTK_LABEL(tab), text);
+}
+
+static void refresh_mode_button_labels(AppCtx *ctx)
+{
+    int i;
+
+    for (i = 0; i < 3; i++)
+    {
+        GtkWidget *btn = ctx->mode_buttons[i];
+        GtkWidget *title;
+        GtkWidget *sub;
+        powergov_user_mode_t mode;
+
+        if (!btn)
+            continue;
+
+        mode = (powergov_user_mode_t)GPOINTER_TO_INT(
+            g_object_get_data(G_OBJECT(btn), "mode"));
+        title = (GtkWidget *)g_object_get_data(G_OBJECT(btn), "mode_title");
+        sub = (GtkWidget *)g_object_get_data(G_OBJECT(btn), "mode_sub");
+        if (!title || !sub)
+            continue;
+
+        gtk_label_set_markup(GTK_LABEL(title),
+                             g_markup_printf_escaped("<b>%s</b>",
+                                                       pg_user_mode_title(mode)));
+        gtk_label_set_text(GTK_LABEL(sub), pg_user_mode_subtitle(mode));
+    }
+}
+
+static void invalidate_dev_panel_cache(AppCtx *ctx)
+{
+    ctx->dev_log_initialized = 0;
+    ctx->dev_log_last_snapshot[0] = '\0';
+    ctx->metrics_initialized = 0;
+    ctx->metrics_last_snapshot[0] = '\0';
+}
+
+static void refresh_ui_language(AppCtx *ctx)
+{
+    PgTr dev_tab_ids[] = {
+        PG_TR_TAB_SYSTEM, PG_TR_TAB_CPU, PG_TR_TAB_COMPAT,
+        PG_TR_TAB_METRICS, PG_TR_TAB_LOG
+    };
+    int i;
+
+    if (!ctx)
+        return;
+
+    if (ctx->lang_btn)
+    {
+        gtk_button_set_label(GTK_BUTTON(ctx->lang_btn),
+                             pg_lang_button_label());
+        gtk_widget_set_tooltip_text(ctx->lang_btn, pg_lang_button_tooltip());
+    }
+
+    gtk_button_set_label(GTK_BUTTON(ctx->start_btn), _(PG_TR_BTN_START_SERVICE));
+    gtk_button_set_label(GTK_BUTTON(ctx->stop_btn), _(PG_TR_BTN_STOP));
+    gtk_button_set_label(GTK_BUTTON(ctx->restart_btn), _(PG_TR_BTN_RESTART));
+    update_dev_tab_access(ctx);
+
+    if (ctx->battery_label)
+        gtk_label_set_text(GTK_LABEL(ctx->battery_label),
+                           _(PG_TR_LABEL_BATTERY_PROTECT));
+    if (ctx->activity_label)
+        gtk_label_set_text(GTK_LABEL(ctx->activity_label),
+                           _(PG_TR_LABEL_RECENT_ACTIVITY));
+
+    gtk_label_set_text(GTK_LABEL(ctx->dev_lock_banner), _(PG_TR_DEV_LOCK_BANNER));
+
+    notebook_tab_set_text(GTK_NOTEBOOK(ctx->main_notebook), 0,
+                          _(PG_TR_TAB_PROFILE));
+    notebook_tab_set_text(GTK_NOTEBOOK(ctx->main_notebook), 1,
+                          _(PG_TR_TAB_DIAGNOSTIC));
+
+    for (i = 0; i < 5; i++)
+    {
+        notebook_tab_set_text(GTK_NOTEBOOK(ctx->dev_notebook), i,
+                            _(dev_tab_ids[i]));
+    }
+
+    refresh_mode_button_labels(ctx);
+    invalidate_dev_panel_cache(ctx);
+    refresh_async(ctx);
+}
+
+static void on_lang_btn_clicked(GtkButton *btn, gpointer data)
+{
+    AppCtx *ctx = data;
+
+    (void)btn;
+    pg_i18n_toggle();
+    refresh_ui_language(ctx);
 }
 
 static void build_ui(AppCtx *ctx)
@@ -1076,7 +1299,10 @@ static void build_ui(AppCtx *ctx)
     GtkWidget *bat_box;
     GtkWidget *log_box;
     int i;
-    const char *dev_tabs[] = { "Sistema", "CPU", "Compat", "Métricas", "Log" };
+    PgTr dev_tab_ids[] = {
+        PG_TR_TAB_SYSTEM, PG_TR_TAB_CPU, PG_TR_TAB_COMPAT,
+        PG_TR_TAB_METRICS, PG_TR_TAB_LOG
+    };
     GtkWidget *dev_pages[5];
 
     ctx->sys_view = NULL;
@@ -1120,11 +1346,19 @@ static void build_ui(AppCtx *ctx)
             gtk_box_pack_start(GTK_BOX(title_row), title, FALSE, FALSE, 0);
         }
 
+        ctx->lang_btn = gtk_button_new_with_label(pg_lang_button_label());
+        gtk_widget_set_tooltip_text(ctx->lang_btn, pg_lang_button_tooltip());
+        gtk_widget_set_halign(ctx->lang_btn, GTK_ALIGN_END);
+        gtk_widget_set_valign(ctx->lang_btn, GTK_ALIGN_CENTER);
+        g_signal_connect(ctx->lang_btn, "clicked",
+                         G_CALLBACK(on_lang_btn_clicked), ctx);
+        gtk_box_pack_end(GTK_BOX(title_row), ctx->lang_btn, FALSE, FALSE, 0);
+
         gtk_box_pack_start(GTK_BOX(vbox), title_row, FALSE, FALSE, 0);
     }
 
     header = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-    ctx->status_label = gtk_label_new("Conectando…");
+    ctx->status_label = gtk_label_new(_(PG_TR_CONNECTING));
     ctx->power_label = gtk_label_new("");
     ctx->feedback_label = gtk_label_new("");
     gtk_label_set_xalign(GTK_LABEL(ctx->status_label), 0.0);
@@ -1136,9 +1370,9 @@ static void build_ui(AppCtx *ctx)
     gtk_box_pack_start(GTK_BOX(vbox), header, FALSE, FALSE, 0);
 
     ctx->service_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    ctx->start_btn = gtk_button_new_with_label("Iniciar servicio");
-    ctx->stop_btn = gtk_button_new_with_label("Detener");
-    ctx->restart_btn = gtk_button_new_with_label("Reiniciar");
+    ctx->start_btn = gtk_button_new_with_label(_(PG_TR_BTN_START_SERVICE));
+    ctx->stop_btn = gtk_button_new_with_label(_(PG_TR_BTN_STOP));
+    ctx->restart_btn = gtk_button_new_with_label(_(PG_TR_BTN_RESTART));
     g_signal_connect(ctx->start_btn, "clicked", G_CALLBACK(on_service_start), ctx);
     g_signal_connect(ctx->stop_btn, "clicked", G_CALLBACK(on_service_stop), ctx);
     g_signal_connect(ctx->restart_btn, "clicked", G_CALLBACK(on_service_restart), ctx);
@@ -1161,8 +1395,8 @@ static void build_ui(AppCtx *ctx)
     ctx->battery_switch = gtk_switch_new();
     ctx->battery_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 5, 95, 5);
     gtk_range_set_value(GTK_RANGE(ctx->battery_scale), 80);
-    gtk_box_pack_start(GTK_BOX(bat_box),
-                       gtk_label_new("Protección batería (%)"), FALSE, FALSE, 0);
+    ctx->battery_label = gtk_label_new(_(PG_TR_LABEL_BATTERY_PROTECT));
+    gtk_box_pack_start(GTK_BOX(bat_box), ctx->battery_label, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(bat_box), ctx->battery_switch, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(bat_box), ctx->battery_scale, TRUE, TRUE, 0);
     ctx->battery_sw_handler = g_signal_connect(ctx->battery_switch, "state-set",
@@ -1171,8 +1405,8 @@ static void build_ui(AppCtx *ctx)
                      G_CALLBACK(on_battery_scale_release), ctx);
 
     log_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    gtk_box_pack_start(GTK_BOX(log_box),
-                       gtk_label_new("Actividad reciente"), FALSE, FALSE, 0);
+    ctx->activity_label = gtk_label_new(_(PG_TR_LABEL_RECENT_ACTIVITY));
+    gtk_box_pack_start(GTK_BOX(log_box), ctx->activity_label, FALSE, FALSE, 0);
     {
         GtkWidget *log_scroll = make_action_log_scrolled();
         ctx->action_log_view = gtk_bin_get_child(GTK_BIN(log_scroll));
@@ -1184,19 +1418,17 @@ static void build_ui(AppCtx *ctx)
     gtk_box_pack_start(GTK_BOX(profile_page), bat_box, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(profile_page), log_box, FALSE, FALSE, 0);
     gtk_notebook_append_page(GTK_NOTEBOOK(ctx->main_notebook), profile_page,
-                             gtk_label_new("Perfil"));
+                             gtk_label_new(_(PG_TR_TAB_PROFILE)));
 
     ctx->dev_notebook = gtk_notebook_new();
     for (i = 0; i < 5; i++)
     {
         gtk_notebook_append_page(GTK_NOTEBOOK(ctx->dev_notebook), dev_pages[i],
-                                 gtk_label_new(dev_tabs[i]));
+                                 gtk_label_new(_(dev_tab_ids[i])));
     }
 
     dev_tab_page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    ctx->dev_lock_banner = gtk_label_new(
-        "El diagnóstico técnico requiere permisos de administrador.\n"
-        "Usá el botón «Modo desarrollador» para desbloquearlo.");
+    ctx->dev_lock_banner = gtk_label_new(_(PG_TR_DEV_LOCK_BANNER));
     gtk_label_set_line_wrap(GTK_LABEL(ctx->dev_lock_banner), TRUE);
     gtk_label_set_xalign(GTK_LABEL(ctx->dev_lock_banner), 0.0);
     gtk_style_context_add_class(
@@ -1205,11 +1437,11 @@ static void build_ui(AppCtx *ctx)
                        FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(dev_tab_page), ctx->dev_notebook, TRUE, TRUE, 0);
     gtk_notebook_append_page(GTK_NOTEBOOK(ctx->main_notebook), dev_tab_page,
-                             gtk_label_new("Diagnóstico"));
+                             gtk_label_new(_(PG_TR_TAB_DIAGNOSTIC)));
 
     gtk_box_pack_start(GTK_BOX(vbox), ctx->main_notebook, TRUE, TRUE, 0);
 
-    ctx->dev_btn = gtk_button_new_with_label("Modo desarrollador");
+    ctx->dev_btn = gtk_button_new_with_label(_(PG_TR_BTN_DEV_MODE));
     g_signal_connect(ctx->dev_btn, "clicked", G_CALLBACK(on_dev_btn_clicked), ctx);
     gtk_box_pack_start(GTK_BOX(vbox), ctx->dev_btn, FALSE, FALSE, 0);
 
@@ -1222,6 +1454,7 @@ int main(int argc, char **argv)
 
     (void)argv;
     memset(&ctx, 0, sizeof(ctx));
+    pg_i18n_init();
     gtk_init(&argc, &argv);
     apply_ui_theme();
     build_ui(&ctx);
