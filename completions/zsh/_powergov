@@ -1,42 +1,61 @@
 #compdef powergov
-# zsh completion for powergov(1) v1.7.3
+# zsh completion for powergov(1)
 
 _powergov() {
-    local -a commands flags thresholds
-    commands=(on off status)
+    local -a commands modes features onoff thresholds flags devlog_opts
+    commands=(on off status mode feature features dev-log dev-metrics)
+    modes=(max-battery max balanced performance perf)
+    features=(governor epp freq_cap freq-cap turbo platform runtime_pm runtime-pm)
+    onoff=(on off)
+    thresholds=(0 10 20 30 40 50 60 70 80 90 100)
+    devlog_opts=('--tail' '-n' '-f' '--follow')
     flags=(
+        '-h[Show help]'
         '--help[Show help]'
         '--battery-safe[Set battery-safe threshold percent]'
         '--version[Show version]'
         '-v[Show version]'
     )
-    thresholds=(0 10 20 30 40 50 60 70 80 90 100)
 
-    if (( CURRENT == 2 )); then
-        case $words[2] in
-            --battery-safe)
-                _values 'battery threshold' $thresholds
-                return
-                ;;
-            -v|--version|--help)
-                return
-                ;;
-        esac
-    fi
+    _arguments -C \
+        '(-h --help)'{-h,--help}'[Show help]' \
+        '(-v --version)'{-v,--version}'[Show version]' \
+        '--battery-safe[Block performance below percent]:percent:($thresholds)' \
+        '1:command:->cmd' \
+        '*::arg:->args'
 
-    if (( CURRENT == 3 )) && [[ $words[2] == --battery-safe ]]; then
-        _values 'battery threshold' $thresholds
-        return
-    fi
-
-    if (( CURRENT == 2 )); then
-        _describe -V 'command' commands
-        _describe -V 'option' flags
-        return
-    fi
-
-    _describe -V 'command' commands
-    _describe -V 'option' flags
+    case $state in
+        cmd)
+            _describe -V 'command' commands
+            _describe -V 'option' flags
+            ;;
+        args)
+            case $words[1] in
+                mode)
+                    _describe 'mode' modes
+                    ;;
+                feature)
+                    if (( CURRENT == 3 )); then
+                        _describe 'feature' features
+                    else
+                        _describe 'state' onoff
+                    fi
+                    ;;
+                features)
+                    _describe 'subcommand' list
+                    ;;
+                dev-log)
+                    _arguments \
+                        '--tail[Tail N lines then stop]:lines:(20 50 80 100 200)' \
+                        '-n[Tail N lines then stop]:lines:(20 50 80 100 200)' \
+                        '(-f --follow)'{-f,--follow}'[Stream new log lines]'
+                    ;;
+                --battery-safe)
+                    _values 'battery threshold' $thresholds
+                    ;;
+            esac
+            ;;
+    esac
 }
 
 _powergov "$@"

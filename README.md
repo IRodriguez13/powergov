@@ -80,6 +80,8 @@ This license ensures that powergov and any improvements to it remain available t
 
 ## Building and Installation
 
+Full operational documentation: **[Documentation/README.md](Documentation/README.md)** (architecture, configuration, modules, metrics, theoretical battery impact).
+
 ### Prerequisites
 
 - GCC compiler
@@ -105,6 +107,16 @@ sudo make install-service
 sudo systemctl enable powergov.service
 sudo systemctl start powergov.service
 ```
+
+### Desktop UI (GTK)
+
+```bash
+make powergov-ui
+sudo make install-ui install-ui-policy install-ui-helper
+powergov-ui
+```
+
+Requires `gtk+-3.0` (pkg-config). Installs icon, `.desktop` entry and Polkit policy for diagnostic mode.
 
 ## Usage
 

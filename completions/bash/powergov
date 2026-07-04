@@ -1,16 +1,47 @@
-# bash completion for powergov(1) v1.7.3 -*- shell-script -*-
+# bash completion for powergov(1) -*- shell-script -*-
 
 _powergov()
 {
     local cur prev words cword split
     _init_completion -s || return
 
-    local commands='on off status'
-    local flags='--help --battery-safe --version -v'
+    local commands='on off status mode feature features dev-log dev-metrics'
+    local flags='-h --help --battery-safe --version -v'
+    local modes='max-battery max balanced performance perf'
+    local features='governor epp freq_cap freq-cap turbo platform runtime_pm runtime-pm'
+    local onoff='on off'
+    local devlog_opts='--tail -n -f --follow'
+    local thresholds='0 10 20 30 40 50 60 70 80 90 100'
 
-    case $prev in
+    case "${prev}" in
         --battery-safe)
-            COMPREPLY=( $( compgen -W '0 10 20 30 40 50 60 70 80 90 100' -- "$cur" ) )
+            COMPREPLY=( $( compgen -W "$thresholds" -- "$cur" ) )
+            return
+            ;;
+        mode)
+            COMPREPLY=( $( compgen -W "$modes" -- "$cur" ) )
+            return
+            ;;
+        feature)
+            if (( cword == 2 )); then
+                COMPREPLY=( $( compgen -W "$features" -- "$cur" ) )
+            else
+                COMPREPLY=( $( compgen -W "$onoff" -- "$cur" ) )
+            fi
+            return
+            ;;
+        features)
+            COMPREPLY=( $( compgen -W 'list' -- "$cur" ) )
+            return
+            ;;
+        dev-log)
+            if [[ $cur == -* ]]; then
+                COMPREPLY=( $( compgen -W "$devlog_opts" -- "$cur" ) )
+            fi
+            return
+            ;;
+        --tail|-n)
+            COMPREPLY=( $( compgen -W '20 50 80 100 200' -- "$cur" ) )
             return
             ;;
     esac
@@ -24,10 +55,47 @@ _powergov()
         return
     fi
 
+    if (( cword == 2 )); then
+        case "${words[1]}" in
+            mode)
+                COMPREPLY=( $( compgen -W "$modes" -- "$cur" ) )
+                return
+                ;;
+            feature)
+                COMPREPLY=( $( compgen -W "$features" -- "$cur" ) )
+                return
+                ;;
+            features)
+                COMPREPLY=( $( compgen -W 'list' -- "$cur" ) )
+                return
+                ;;
+            dev-log)
+                if [[ $cur == -* || -z $cur ]]; then
+                    COMPREPLY=( $( compgen -W "$devlog_opts" -- "$cur" ) )
+                fi
+                return
+                ;;
+        esac
+    fi
+
+    if (( cword == 3 )) && [[ ${words[1]} == feature ]]; then
+        COMPREPLY=( $( compgen -W "$onoff" -- "$cur" ) )
+        return
+    fi
+
+    if (( cword >= 2 )) && [[ ${words[1]} == dev-log ]]; then
+        if [[ $cur == -* ]]; then
+            COMPREPLY=( $( compgen -W "$devlog_opts" -- "$cur" ) )
+        elif [[ ${words[cword-1]} == --tail || ${words[cword-1]} == -n ]]; then
+            COMPREPLY=( $( compgen -W '20 50 80 100 200' -- "$cur" ) )
+        fi
+        return
+    fi
+
     if [[ $cur == -* ]]; then
         COMPREPLY=( $( compgen -W "$flags" -- "$cur" ) )
     else
-        COMPREPLY=( $( compgen -W "$commands $flags" -- "$cur" ) )
+        COMPREPLY=( $( compgen -W "$commands" -- "$cur" ) )
     fi
 } &&
     complete -F _powergov powergov

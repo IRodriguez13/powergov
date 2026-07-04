@@ -1,0 +1,3 @@
+#!/bin/sh
+# Polkit helper: gate for powergov-ui developer mode (exit 0 on auth OK)
+exit 0

@@ -1,5 +1,10 @@
 .vscode/
 *.o
 /powergov
-/*.sh
+/powergov-ui
+/libpowergov.so
 /dist/
+ui/.venv/
+ui/__pycache__/
+**/__pycache__/
+*.pyc

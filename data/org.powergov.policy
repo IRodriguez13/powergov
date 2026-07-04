@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+<policyconfig>
+  <vendor>PowerGov</vendor>
+  <vendor_url>https://github.com/IRodriguez13/powergov</vendor_url>
+
+  <action id="org.powergov.manage-service">
+    <description>Gestionar el servicio powergov</description>
+    <message>Se requiere autenticación para iniciar, detener o reiniciar powergov</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_ininactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/bin/systemctl</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+  <action id="org.powergov.dev-mode">
+    <description>Ver diagnóstico técnico y logs de powergov</description>
+    <message>Se requiere autenticación de administrador para el modo desarrollador</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/libexec/powergov/dev-auth</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+</policyconfig>

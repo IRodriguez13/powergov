@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="PowerGov">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1B5E20"/>
+      <stop offset="100%" stop-color="#00695C"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#E8F5E9"/>
+      <stop offset="100%" stop-color="#A5D6A7"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#80CBC4"/>
+      <stop offset="100%" stop-color="#4DB6AC"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <circle cx="64" cy="64" r="44" fill="none" stroke="url(#ring)" stroke-width="5" opacity="0.85"/>
+  <path d="M72 28 L48 68 H62 L56 100 L88 56 H72 Z" fill="url(#bolt)"/>
+  <circle cx="64" cy="64" r="6" fill="#E0F2F1" opacity="0.9"/>
+</svg>

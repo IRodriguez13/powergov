@@ -23,10 +23,11 @@ make pack
 NOTES="$(cat <<EOF
 ## powergov ${VERSION}
 
-- \`-v\` / \`--version\` con bloque GPL estilo pack-extract
-- Completions bash corregidas (\`_init_completion\`, \`sudo\`, todos los flags)
-- Completion zsh
-- Servicio boot-residente con configuración persistente (\`/etc/powergov.conf\`)
+- Daemon modular (core, CPU, power, platform, runtime PM, métricas)
+- \`libpowergov.so\` + socket Unix para clientes
+- UI GTK nativa (\`powergov-ui\`): perfiles, batería, diagnóstico dev
+- Icono, entrada desktop y Polkit (\`org.powergov.dev-mode\`)
+- Empaquetado: \`make pack\` → \`dist/powergov-${VERSION}.tar.gz\`
 
 ### Instalación
 
@@ -35,6 +36,8 @@ tar -xzf powergov-${VERSION}.tar.gz
 cd powergov-${VERSION}
 make
 sudo make install-service
+make powergov-ui
+sudo make install-ui install-ui-policy install-ui-helper
 \`\`\`
 EOF
 )"
