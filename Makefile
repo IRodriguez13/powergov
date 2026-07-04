@@ -201,12 +201,18 @@ extract:
 release:
 	@./scripts/release.sh
 
+appimage: $(UI_BIN) $(LIBPOWERGOV)
+	@chmod +x scripts/build-appimage.sh scripts/AppRun.appimage
+	@./scripts/build-appimage.sh
+
 ui: $(UI_BIN)
 
 ui-run: $(UI_BIN)
 	./$(UI_BIN)
 
-.PHONY: all install install-bin install-man install-completion install-service install-lib install-ui install-ui-helper install-ui-policy install-ui-icons install-ui-desktop install-ui-shortcut icons stop uninstall uninstall-docs uninstall-service service-status pack extract release ui ui-run clean
+APPIMAGE = dist/PowerGov-$(VERSION)-x86_64.AppImage
+
+.PHONY: all install install-bin install-man install-completion install-service install-lib install-ui install-ui-helper install-ui-policy install-ui-icons install-ui-desktop install-ui-shortcut icons appimage stop uninstall uninstall-docs uninstall-service service-status pack extract release ui ui-run clean
 
 clean:
 	rm -f $(OBJ) client/libpowergov.o include/powergov/types_lib.o $(TARGET) $(LIBPOWERGOV) $(UI_BIN)

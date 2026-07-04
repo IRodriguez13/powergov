@@ -4,6 +4,8 @@
 /powergov-ui
 /libpowergov.so
 /dist/
+AppDir/
+.build/
 ui/.venv/
 ui/__pycache__/
 **/__pycache__/

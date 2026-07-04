@@ -11,6 +11,15 @@ make libpowergov.so powergov-ui
 
 Requiere `pkg-config gtk+-3.0`.
 
+## AppImage (UI portable)
+
+```bash
+make appimage
+# dist/PowerGov-<version>-x86_64.AppImage
+```
+
+El AppImage incluye solo la **UI**. El daemon hay que instalarlo una vez con `./install-powergov.sh`. Sin servicio, la UI indica que PowerGov no está en ejecución.
+
 ## Instalación
 
 ```bash

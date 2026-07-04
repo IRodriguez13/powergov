@@ -1,0 +1,6 @@
+#!/bin/sh
+# AppImage entry: bundled GTK UI + icons; daemon must be installed separately.
+APPDIR="$(dirname "$(readlink -f "$0")")"
+export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${LD_LIBRARY_PATH:-}"
+export POWERGOV_ICON_ROOT="${APPDIR}/usr/share/icons/hicolor"
+exec "${APPDIR}/usr/bin/powergov-ui" "$@"

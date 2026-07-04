@@ -20,41 +20,48 @@ fi
 
 make pack
 
+APPIMAGE="dist/PowerGov-${VERSION}-x86_64.AppImage"
+if make appimage 2>/dev/null; then
+    APPIMAGE_OK=1
+else
+    APPIMAGE_OK=0
+    echo "warning: make appimage failed; release will ship tarball only" >&2
+fi
+
 NOTES="$(cat <<EOF
 ## powergov ${VERSION}
 
-- **Instalador de doble clic**: extraé el tarball y abrí \`Install-PowerGov.desktop\` (o ejecutá \`./install-powergov.sh\`).
-- UI GTK EN/ES, acceso directo en el escritorio, log/métricas sin saltos de scroll.
-- Servicio systemd + \`libpowergov.so\` + Polkit para diagnóstico.
+- **Instalador de doble clic**: extraé el tarball y abrí \`Install-PowerGov.desktop\` (o \`./install-powergov.sh\`).
+- **AppImage opcional** (\`PowerGov-${VERSION}-x86_64.AppImage\`): UI portable; requiere el daemon instalado una vez.
+- UI GTK EN/ES, acceso directo, log/métricas sin saltos de scroll.
 
-### Instalación rápida (usuario)
+### Instalación completa (recomendada, primera vez)
 
 \`\`\`bash
 tar -xzf powergov-${VERSION}.tar.gz
 cd powergov-${VERSION}
-# Doble clic en «Install PowerGov» / «Instalar PowerGov»
-# GNOME: clic derecho → «Permitir lanzar» la primera vez
 ./install-powergov.sh
 \`\`\`
 
-Requiere: \`build-essential\`, \`pkg-config\`, \`libgtk-3-dev\`, \`zenity\` (Ubuntu/Debian: \`sudo apt install build-essential pkg-config libgtk-3-dev zenity\`).
+### Solo UI portable (AppImage)
 
-### Instalación manual
+Tras instalar el servicio una vez, podés usar el AppImage como acceso directo a la UI sin recompilar.
 
-\`\`\`bash
-make && make powergov-ui
-sudo make install-service
-sudo make install-ui install-ui-policy install-ui-helper
-\`\`\`
+Requiere build deps para el tarball: \`build-essential pkg-config libgtk-3-dev zenity\`.
 EOF
 )"
 
+RELEASE_ASSETS=("$TAR")
+if [[ "${APPIMAGE_OK}" -eq 1 && -f "${APPIMAGE}" ]]; then
+    RELEASE_ASSETS+=("${APPIMAGE}")
+fi
+
 if "$GH" auth status >/dev/null 2>&1; then
     if "$GH" release view "$TAG" >/dev/null 2>&1; then
-        "$GH" release upload "$TAG" "$TAR" --clobber
-        echo "uploaded asset to existing release $TAG"
+        "$GH" release upload "$TAG" "${RELEASE_ASSETS[@]}" --clobber
+        echo "uploaded assets to existing release $TAG"
     else
-        "$GH" release create "$TAG" "$TAR" \
+        "$GH" release create "$TAG" "${RELEASE_ASSETS[@]}" \
             --title "powergov ${VERSION}" \
             --notes "$NOTES"
         echo "created release $TAG"
