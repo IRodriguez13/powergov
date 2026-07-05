@@ -15,4 +15,17 @@ if [ -n "${APPIMAGE:-}" ] && [ -f "${APPIMAGE}" ] && [ "$(id -u)" -ne 0 ]; then
     fi
 fi
 
-exec "${APPDIR}/usr/bin/powergov-ui" "$@"
+UI="${APPDIR}/usr/bin/powergov-ui"
+
+# Detach from the shell when launched interactively (closing the terminal must not kill the UI).
+# Set POWERGOV_FG=1 to keep attached (debug / see stderr).
+if [ -z "${POWERGOV_FG:-}" ] && [ -t 0 ] && [ -t 1 ]; then
+    if command -v setsid >/dev/null 2>&1; then
+        setsid "${UI}" "$@" </dev/null >/dev/null 2>&1 &
+    else
+        nohup "${UI}" "$@" </dev/null >/dev/null 2>&1 &
+    fi
+    exit 0
+fi
+
+exec "${UI}" "$@"

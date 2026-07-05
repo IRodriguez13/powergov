@@ -11,6 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <limits.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <signal.h>
 #include <sys/wait.h>
@@ -2277,12 +2278,43 @@ static void build_ui(AppCtx *ctx)
     update_dev_tab_access(ctx);
 }
 
+static void detach_from_terminal_if_needed(void)
+{
+    pid_t pid;
+    int fd;
+
+    if (getenv("POWERGOV_FG"))
+        return;
+    if (!isatty(STDIN_FILENO) || !isatty(STDOUT_FILENO))
+        return;
+
+    pid = fork();
+    if (pid < 0)
+        return;
+    if (pid > 0)
+        _exit(0);
+
+    if (setsid() < 0)
+        _exit(1);
+
+    fd = open("/dev/null", O_RDWR);
+    if (fd >= 0)
+    {
+        dup2(fd, STDIN_FILENO);
+        dup2(fd, STDOUT_FILENO);
+        dup2(fd, STDERR_FILENO);
+        if (fd > STDERR_FILENO)
+            close(fd);
+    }
+}
+
 int main(int argc, char **argv)
 {
     AppCtx ctx;
 
     (void)argv;
     memset(&ctx, 0, sizeof(ctx));
+    detach_from_terminal_if_needed();
     pg_i18n_init();
     gtk_init(&argc, &argv);
     apply_ui_theme();

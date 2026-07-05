@@ -45,8 +45,7 @@ NOTES="$(cat <<EOF
 
 ### Cambios en ${VERSION}
 
-- Desinstalación completa desde la UI (servicio, archivos del sistema y accesos directos).
-- Modo inteligente más fluido con batería > 30 % (sin techo de frecuencia ni perfil low-power hasta reserva baja).
+- Al ejecutar desde terminal, la UI se desacopla del shell (cerrar la terminal no cierra PowerGov). \`POWERGOV_FG=1\` mantiene el proceso en primer plano para depuración.
 
 ### Instalación desde código fuente (tarball)
 
