@@ -2,6 +2,10 @@
 # User-scope menu + desktop shortcut for the PowerGov AppImage (no root).
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=powergov-xdg-paths.sh
+. "${SCRIPT_DIR}/powergov-xdg-paths.sh"
+
 APPIMAGE="${1:-${APPIMAGE:-}}"
 APPDIR="${2:-${APPDIR:-}}"
 
@@ -20,53 +24,17 @@ desktop_escape() {
     printf '%s' "$s"
 }
 
-canonical_dir() {
-    local d=$1
-    if [[ -d "${d}" ]] && command -v realpath >/dev/null 2>&1; then
-        realpath "${d}"
-    else
-        printf '%s' "${d}"
-    fi
-}
-
-# Resolve every existing user desktop dir (Escritorio/Desktop/locale via xdg).
-# Prints one path per line; creates a sensible default if none exist.
+# Resolve desktop dirs via XDG (locale-safe); create default if missing.
 resolve_desktop_dirs() {
-    local -a candidates=()
-    local primary="" d canon
-
-    if command -v xdg-user-dir >/dev/null 2>&1; then
-        primary="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
-        [[ -n "${primary}" ]] && candidates+=("${primary}")
-    fi
-
-    if [[ -n "${XDG_DESKTOP_DIR:-}" ]]; then
-        candidates+=("${XDG_DESKTOP_DIR}")
-    fi
-    candidates+=("${HOME}/Desktop" "${HOME}/Escritorio")
-
-    declare -A seen_dirs=()
     local -a existing=()
+    local d
 
-    for d in "${candidates[@]}"; do
-        [[ -z "${d}" || "${d}" == "/" ]] && continue
-        canon="$(canonical_dir "${d}")"
-        [[ -n "${canon}" && -z "${seen_dirs[${canon}]+x}" ]] || continue
-        seen_dirs["${canon}"]=1
-        if [[ -d "${d}" ]]; then
-            existing+=("${d}")
-        fi
-    done
+    while IFS= read -r d; do
+        [[ -n "${d}" ]] && existing+=("${d}")
+    done < <(pg_desktop_dirs)
 
     if [[ ${#existing[@]} -eq 0 ]]; then
-        if [[ -z "${primary}" ]] && command -v xdg-user-dir >/dev/null 2>&1; then
-            primary="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
-        fi
-        if [[ -z "${primary}" ]]; then
-            primary="${XDG_DESKTOP_DIR:-${HOME}/Desktop}"
-        fi
-        mkdir -p "${primary}"
-        existing=("${primary}")
+        d="$(pg_default_desktop_dir)" && existing=("${d}")
     fi
 
     printf '%s\n' "${existing[@]}"
@@ -83,6 +51,46 @@ install_desktop_shortcut() {
     fi
 }
 
+appimage_version() {
+    local bin=$1
+    local line ver
+
+    [[ -x "${bin}" ]] || return 1
+    line="$("${bin}" --version 2>/dev/null | head -1 || true)"
+    ver="$(printf '%s' "${line}" | sed -n 's/.*) \([0-9][0-9.]*\).*/\1/p')"
+    [[ -n "${ver}" ]] || return 1
+    printf '%s' "${ver}"
+}
+
+version_newer() {
+    local a=$1
+    local b=$2
+    local IFS=.
+    local -a av bv
+    local i
+
+    IFS=. read -r -a av <<< "${a}"
+    IFS=. read -r -a bv <<< "${b}"
+    for i in 0 1 2; do
+        local ai=${av[$i]:-0}
+        local bi=${bv[$i]:-0}
+        (( 10#${ai} > 10#${bi} )) && return 0
+        (( 10#${ai} < 10#${bi} )) && return 1
+    done
+    return 1
+}
+
+should_replace_canonical() {
+    local src=$1
+
+    [[ ! -f "${CANONICAL}" ]] && return 0
+    local sv dv
+    sv="$(appimage_version "${src}" || true)"
+    dv="$(appimage_version "${CANONICAL}" || true)"
+    [[ -z "${sv}" || -z "${dv}" ]] && return 0
+    version_newer "${sv}" "${dv}"
+}
+
 DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 APPL_DIR="${DATA_HOME}/applications"
 ICON_ROOT="${DATA_HOME}/icons/hicolor"
@@ -97,7 +105,7 @@ mkdir -p "${CONFIG_DIR}"
 # Prefer a single install location; migrate shortcuts from a download-folder copy.
 if [[ -f "${APPIMAGE}" && "${APPIMAGE}" != "${CANONICAL}" ]]; then
     mkdir -p "${CANONICAL_DIR}"
-    if [[ ! -f "${CANONICAL}" ]]; then
+    if should_replace_canonical "${APPIMAGE}"; then
         cp -f "${APPIMAGE}" "${CANONICAL}.part" && mv -f "${CANONICAL}.part" "${CANONICAL}"
         chmod +x "${CANONICAL}"
     fi

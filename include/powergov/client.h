@@ -31,6 +31,7 @@ typedef struct
     char powergov_version[POWERGOV_SOCK_STR];
     int systemd_active;
     int ppd_detected;
+    int tlp_detected;
 } powergov_reply_system_t;
 
 typedef struct
@@ -111,6 +112,8 @@ int powergov_client_ping(void);
 int powergov_client_set_user_mode(powergov_user_mode_t mode);
 int powergov_client_set_battery_threshold(int threshold);
 int powergov_client_set_feature(powergov_feature_id_t id, int enabled);
+int powergov_client_set_tuning(powergov_tuning_id_t id, int value);
+int powergov_client_query_tuning(powergov_reply_tuning_t *out);
 
 int powergov_client_query_status(powergov_reply_status_t *out);
 int powergov_client_query_system(powergov_reply_system_t *out);

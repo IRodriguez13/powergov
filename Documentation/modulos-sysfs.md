@@ -1,6 +1,6 @@
 # Módulos e interfaces sysfs
 
-> **Última verificación:** 2026-07-04  
+> **Última verificación:** 2026-07-05  
 > **Fuente de verdad:** `cpu/*.c`, `platform/platform_profile.c`, `devices/runtime_pm.c`, `power/power_supply.c`, `core/sysfs.c`
 
 Cada módulo implementa **apply** (escribir si difiere), **verify** (releer y comparar) y registra métricas `apply_ok|fail|skip` y `verify_ok|fail`.
@@ -70,6 +70,18 @@ Valores usados: `low-power`, `balanced`, `performance`.
 | USB | `/sys/bus/usb/devices/*/power/control` |
 
 En modo agresivo escribe `auto` donde el valor previo no era ya `auto`. Guarda path + valor anterior para restore.
+
+## devices/peripheral_pm
+
+Feature: `peripheral_pm`. Solo aplica en modo usuario **custom** con opciones individuales en config (`PERIPHERAL_*`). **No aplica si TLP está activo.**
+
+| Subsistema | Mecanismo | Notas |
+|------------|-----------|-------|
+| WiFi | `iw dev <iface> set power_save on\|off` | Requiere `iw` en PATH; interfaces wireless vía `/sys/class/net/*/wireless` |
+| SATA | Escritura `link_power_management_policy` en `/sys/class/scsi_host/*/link_power_management_policy` o dispositivo block asociado | Restaura valor guardado al desactivar |
+| Audio | `power_save` en `/sys/class/sound/card*/device/.../power/control` o codec HDA | Best-effort según hardware |
+
+Código: `devices/peripheral_pm.c`. Métricas: `apply_ok|fail|skip`, `verify_ok|fail` como el resto de módulos.
 
 ## metrics / RAPL
 

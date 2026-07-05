@@ -1,4 +1,4 @@
-.TH POWERGOV 1 "July 2026" "powergov" "User Commands"
+.TH POWERGOV 1 "July 2026" "powergov 1.10.0" "User Commands"
 .SH NAME
 powergov \- modular laptop power policy daemon for Linux
 .SH SYNOPSIS
@@ -14,7 +14,11 @@ CPU frequency governors
 .BR schedutil ,
 .BR performance ),
 Energy Performance Preference (EPP), turbo boost control, optional frequency caps,
-ACPI platform profile, and PCI/USB runtime power management.
+ACPI platform profile, PCI/USB runtime power management, and optional peripheral
+power saving (WiFi via
+.BR iw (8),
+SATA link power, audio codec power_save) when user mode is
+.BR custom .
 .PP
 It runs in the foreground (under
 .BR systemd (8)),
@@ -25,10 +29,11 @@ Configuration can be changed at runtime through a Unix domain socket without res
 Default user mode is
 .BR max-battery ,
 which prioritizes battery life on discharge. The user may select
-.BR balanced
+.BR balanced ,
+.BR performance ,
 or
-.B performance
-to allow higher performance on battery.
+.B custom
+(for fine-grained toggles and on-demand peripherals).
 .PP
 The daemon uses a three-state machine with temporal hysteresis (three consecutive
 2-second samples) and asymmetric load thresholds:
@@ -61,7 +66,7 @@ Show logical state, CPU load, power source, battery level, EPP, turbo,
 user mode, battery-safe settings, and enabled features.
 .TP
 .B mode
-.I max-battery|balanced|performance
+.I max-battery|balanced|performance|custom
 Set user power policy. Applies immediately if the daemon is running;
 otherwise saved to
 .IR /etc/powergov.conf .
@@ -74,7 +79,8 @@ Enable or disable a subsystem
 .BR freq_cap ,
 .BR turbo ,
 .BR platform ,
-.BR runtime_pm ).
+.BR runtime_pm ,
+.BR peripheral_pm ).
 .TP
 .B features list
 List available feature names.
@@ -115,10 +121,35 @@ Print usage summary.
 .TP
 .B \-\-version
 Display version and exit.
+.SH CONFIGURATION
+Persistent settings in
+.IR /etc/powergov.conf .
+In addition to user mode and features, the file may contain:
+.TP
+.B PERIPHERAL_WIFI
+.BR PERIPHERAL_SATA
+.BR PERIPHERAL_AUDIO
+Each 0 or 1; used in
+.B custom
+mode when
+.B peripheral_pm
+is enabled.
+.TP
+.B CUSTOM_ALLOW_PERFORMANCE
+.BR CUSTOM_RUNTIME_AGGRESSIVE
+Fine-grained custom mode behaviour (see
+.IR Documentation/configuracion.md ).
+.PP
+Runtime tuning (thresholds, peripherals) is also available via the control socket
+(commands
+.B SET_TUNING
+and
+.B QUERY_TUNING )
+used by the GTK UI.
 .SH FILES
 .TP
 .I /etc/powergov.conf
-Persistent configuration (user mode, features, thresholds).
+Persistent configuration (user mode, features, thresholds, peripherals).
 .TP
 .I /run/powergov/powergov.pid
 Pidfile for the running daemon.
@@ -158,9 +189,9 @@ Maximum battery protection (default):
 .B sudo powergov mode max-battery
 .RE
 .TP
-Allow performance on battery:
+Custom mode with peripheral PM (configure flags in conf or via UI):
 .RS
-.B sudo powergov mode performance
+.B sudo powergov mode custom
 .RE
 .TP
 Disable turbo control only:
@@ -172,10 +203,17 @@ Set battery-safe threshold to 30%:
 .RS
 .B sudo powergov \-\-battery-safe 30
 .RE
+.SH DESKTOP UI
+.B powergov-ui
+is a GTK 3 application using the same control socket. Install with
+.BR "make install-ui" .
+AppImage builds bundle the UI for end users; see
+.IR ui/README.md .
 .SH SEE ALSO
 .BR powergov (8),
 .BR systemd (1),
 .BR cpupower (1),
+.BR iw (8),
 Documentation under
 .IR Documentation/
 in the source tree.

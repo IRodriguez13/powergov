@@ -6,6 +6,8 @@
 #include <powergov/client.h>
 #include "i18n.h"
 #include "update_check.h"
+#include "daemon_upgrade.h"
+#include "version.h"
 #include <gtk/gtk.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,10 +20,14 @@
 #include <sys/wait.h>
 #include <time.h>
 
-#define REFRESH_MS           4000
+#define REFRESH_MS_FOCUSED   8000
 #define FEEDBACK_MS          5000
 #define ACTION_LOG_MAX_LINES 40
 #define DEV_LOG_UI_MAX_LINES 500
+#define PG_USER_MODE_COUNT   4
+#define PG_DEV_TAB_COUNT     6
+#define PG_MAIN_TAB_PROFILE  0
+#define PG_MAIN_TAB_DIAG     1
 #define POLKIT_DEV_MODE      "org.powergov.dev-mode"
 #define POLKIT_MANAGE_SVC    "org.powergov.manage-service"
 #define POLKIT_INSTALL_SVC   "org.powergov.install-service"
@@ -43,10 +49,18 @@
 
 typedef struct _AppCtx AppCtx;
 
+static int spawn_argv_ok(char **argv);
+static int staging_bundle_complete(const char *dir);
+static int path_on_appimage_mount(const char *path);
+static int pkexec_exit_denied(gint status);
+static gboolean verify_install_idle(gpointer data);
+
 typedef enum
 {
     UI_ACT_SET_MODE = 1,
-    UI_ACT_SET_BATTERY
+    UI_ACT_SET_BATTERY,
+    UI_ACT_SET_FEATURE,
+    UI_ACT_SET_TUNING
 } UiActionKind;
 
 typedef struct
@@ -55,13 +69,19 @@ typedef struct
     int daemon_up;
     int systemd_active;
     int service_installed;
-    int fetch_dev;
+    int fetch_dev_mask;
+    int fetch_tuning;
     int st_ok;
     int sys_ok;
     int cpu_ok;
     int compat_ok;
     int metrics_ok;
     int log_ok;
+    int tuning_ok;
+    int daemon_outdated;
+    int daemon_api_old;
+    char daemon_version[64];
+    powergov_reply_tuning_t tuning;
     powergov_reply_status_t st;
     powergov_reply_system_t sys;
     powergov_reply_cpu_t cpu;
@@ -76,6 +96,10 @@ typedef struct
     int mode;
     int battery_thr;
     int battery_on;
+    int feature_id;
+    int feature_on;
+    int tuning_id;
+    int tuning_value;
     int send_ok;
     int verify_ok;
     powergov_reply_status_t st;
@@ -93,6 +117,7 @@ struct _AppCtx
     GtkWidget *advanced_modes_label;
     GtkWidget *battery_switch;
     GtkWidget *battery_scale;
+    GtkWidget *battery_state_label;
     GtkWidget *main_notebook;
     GtkWidget *dev_notebook;
     GtkWidget *dev_lock_banner;
@@ -110,10 +135,25 @@ struct _AppCtx
     GtkWidget *compat_view;
     GtkWidget *metrics_view;
     GtkWidget *log_view;
-    GtkWidget *mode_buttons[3];
-    gulong mode_handlers[3];
+    GtkWidget *features_page;
+    GtkWidget *features_section_label;
+    GtkWidget *peripheral_section_label;
+    GtkWidget *tlp_banner;
+    GtkWidget *feature_checks[POWERGOV_FEATURE_COUNT];
+    GtkWidget *periph_checks[3];
+    gulong feature_handlers[POWERGOV_FEATURE_COUNT];
+    gulong periph_handlers[3];
+    int periph_tuning_synced;
+    GtkWidget *mode_buttons[PG_USER_MODE_COUNT];
+    gulong mode_handlers[PG_USER_MODE_COUNT];
+    int feature_ui_sync;
+    int tlp_active_cached;
+    int window_focused;
+    int main_tab_current;
+    int dev_tab_current;
     guint timer_id;
     guint feedback_timeout_id;
+    GtkStatusIcon *tray_icon;
     gulong battery_sw_handler;
     int daemon_up;
     int service_installed;
@@ -121,10 +161,14 @@ struct _AppCtx
     int install_busy;
     int uninstall_busy;
     int startup_prompt_done;
+    int daemon_upgrade_prompted;
     int dev_log_initialized;
     int metrics_initialized;
     int refresh_busy;
     int ui_sync;
+    int ui_action_inflight;
+    int periph_pending[3];
+    guint battery_debounce_id;
     char dev_log_last_snapshot[POWERGOV_SOCK_LOG_SZ + 1];
     char metrics_last_snapshot[POWERGOV_SOCK_METRICS_SZ + 1];
     char install_tmpdir[512];
@@ -265,6 +309,49 @@ static int try_helper_candidate(const char *candidate, char *out, size_t outsz)
     return 1;
 }
 
+static int ensure_repo_staging(char *out, size_t outsz)
+{
+    char self_dir[512];
+    char staging[512];
+    char powergov_bin[512];
+    char script[512];
+    char *argv[3];
+
+    if (!out || outsz == 0)
+        return 0;
+
+    if (!read_self_dir(self_dir, sizeof(self_dir)))
+        return 0;
+
+    snprintf(staging, sizeof(staging), "%s/.staging/install", self_dir);
+    if (staging_has_daemon(staging))
+    {
+        snprintf(out, outsz, "%s", staging);
+        return 1;
+    }
+
+    snprintf(powergov_bin, sizeof(powergov_bin), "%s/powergov", self_dir);
+    if (access(powergov_bin, X_OK) != 0)
+        return 0;
+
+    snprintf(script, sizeof(script), "%s/scripts/prepare-install-staging.sh",
+             self_dir);
+    if (access(script, X_OK) != 0)
+        return 0;
+
+    argv[0] = script;
+    argv[1] = staging;
+    argv[2] = NULL;
+    if (!spawn_argv_ok(argv))
+        return 0;
+
+    if (!staging_has_daemon(staging))
+        return 0;
+
+    snprintf(out, outsz, "%s", staging);
+    return 1;
+}
+
 static int resolve_install_staging(char *out, size_t outsz)
 {
     const char *env;
@@ -278,17 +365,26 @@ static int resolve_install_staging(char *out, size_t outsz)
     if (env && try_staging_candidate(env, out, outsz))
         return 1;
 
-    if (try_staging_candidate(POWERGOV_INSTALL_STAGING_DEFAULT, out, outsz))
+    if (ensure_repo_staging(out, outsz) && staging_bundle_complete(out))
         return 1;
 
     if (read_self_dir(self_dir, sizeof(self_dir)))
     {
+        snprintf(path, sizeof(path), "%s/.staging/install", self_dir);
+        if (staging_bundle_complete(path))
+        {
+            snprintf(out, outsz, "%s", path);
+            return 1;
+        }
+
         snprintf(path, sizeof(path), "%s/../lib/powergov/staging", self_dir);
-        if (try_staging_candidate(path, out, outsz))
+        if (try_staging_candidate(path, out, outsz) &&
+            staging_bundle_complete(out))
             return 1;
     }
 
-    if (try_staging_candidate(POWERGOV_STAGING_REL, out, outsz))
+    if (try_staging_candidate(POWERGOV_INSTALL_STAGING_DEFAULT, out, outsz) &&
+        staging_bundle_complete(out))
         return 1;
 
     return 0;
@@ -307,11 +403,13 @@ static int resolve_install_helper(char *out, size_t outsz)
     if (env && try_helper_candidate(env, out, outsz))
         return 1;
 
-    if (try_helper_candidate(POWERGOV_INSTALL_HELPER, out, outsz))
-        return 1;
-
     if (read_self_dir(self_dir, sizeof(self_dir)))
     {
+        snprintf(path, sizeof(path),
+                 "%s/scripts/install-service-resident.sh", self_dir);
+        if (try_helper_candidate(path, out, outsz))
+            return 1;
+
         snprintf(path, sizeof(path),
                  "%s/../libexec/powergov/install-service-resident.sh",
                  self_dir);
@@ -320,6 +418,9 @@ static int resolve_install_helper(char *out, size_t outsz)
     }
 
     if (try_helper_candidate("scripts/install-service-resident.sh", out, outsz))
+        return 1;
+
+    if (try_helper_candidate(POWERGOV_INSTALL_HELPER, out, outsz))
         return 1;
 
     return 0;
@@ -387,10 +488,27 @@ static int resolve_user_cleanup_helper(char *out, size_t outsz)
 }
 
 static void start_install_async(AppCtx *ctx);
+static void on_daemon_upgrade_install(gpointer data);
 static int prompt_install_service(AppCtx *ctx);
 static int ensure_daemon_for_action(AppCtx *ctx);
 static void refresh_async(AppCtx *ctx);
+static void refresh_timer_start(AppCtx *ctx);
+static void refresh_timer_stop(AppCtx *ctx);
+static void show_main_window(AppCtx *ctx);
+static void quit_application(AppCtx *ctx);
+static unsigned int dev_tab_fetch_mask(int tab);
+static unsigned int compute_fetch_mask(const AppCtx *ctx);
+static gboolean on_timer(gpointer data);
+static GdkPixbuf *load_brand_icon(int size);
+static int dev_mode_active(const AppCtx *ctx);
 static void update_service_buttons(AppCtx *ctx, int systemd_active);
+
+static int path_needs_materialize(const char *helper, const char *staging)
+{
+    if (getenv("APPIMAGE"))
+        return 1;
+    return path_on_appimage_mount(helper) || path_on_appimage_mount(staging);
+}
 
 static int path_on_appimage_mount(const char *path)
 {
@@ -448,9 +566,10 @@ static int materialize_install_bundle(AppCtx *ctx, const char *helper_src,
     char *cp_tree_argv[5];
     char *cp_helper_argv[5];
 
-    if (!path_on_appimage_mount(helper_src) &&
-        !path_on_appimage_mount(staging_src))
+    if (!path_needs_materialize(helper_src, staging_src))
     {
+        if (!staging_bundle_complete(staging_src))
+            return 0;
         snprintf(helper_dst, helper_dst_sz, "%s", helper_src);
         snprintf(staging_dst, staging_dst_sz, "%s", staging_src);
         return 1;
@@ -557,9 +676,207 @@ static gboolean refresh_async_idle(gpointer data)
     return G_SOURCE_REMOVE;
 }
 
+static unsigned int dev_tab_fetch_mask(int tab)
+{
+    switch (tab)
+    {
+    case 0:
+        return POWERGOV_BUNDLE_SYSTEM;
+    case 1:
+        return POWERGOV_BUNDLE_CPU;
+    case 2:
+        return POWERGOV_BUNDLE_COMPAT;
+    case 3:
+        return POWERGOV_BUNDLE_METRICS;
+    case 4:
+        return POWERGOV_BUNDLE_LOG;
+    case 5:
+        return 0;
+    default:
+        return 0;
+    }
+}
+
+static unsigned int compute_fetch_mask(const AppCtx *ctx)
+{
+    unsigned int mask;
+
+    if (!ctx || !dev_mode_active(ctx))
+        return 0;
+    if (ctx->main_tab_current != PG_MAIN_TAB_DIAG)
+        return 0;
+
+    mask = dev_tab_fetch_mask(ctx->dev_tab_current);
+    /* STATUS on every dev poll: daemon_up, profile header, version checks. */
+    return mask | POWERGOV_BUNDLE_STATUS;
+}
+
+static void refresh_timer_stop(AppCtx *ctx)
+{
+    if (!ctx || !ctx->timer_id)
+        return;
+    g_source_remove(ctx->timer_id);
+    ctx->timer_id = 0;
+}
+
+static void refresh_timer_start(AppCtx *ctx)
+{
+    if (!ctx || !ctx->window || !ctx->window_focused)
+        return;
+    if (!gtk_widget_get_visible(ctx->window))
+        return;
+
+    refresh_timer_stop(ctx);
+    ctx->timer_id = g_timeout_add(REFRESH_MS_FOCUSED, on_timer, ctx);
+}
+
 static int dev_mode_active(const AppCtx *ctx)
 {
     return ctx->dev_unlocked;
+}
+
+static int periph_index_from_tuning(int tuning_id)
+{
+    switch ((powergov_tuning_id_t)tuning_id)
+    {
+    case POWERGOV_TUNING_PERIPHERAL_WIFI:
+        return 0;
+    case POWERGOV_TUNING_PERIPHERAL_SATA:
+        return 1;
+    case POWERGOV_TUNING_PERIPHERAL_AUDIO:
+        return 2;
+    default:
+        return -1;
+    }
+}
+
+static int tuning_value_from_reply(const powergov_reply_tuning_t *t, int tuning_id)
+{
+    if (!t)
+        return 0;
+
+    switch ((powergov_tuning_id_t)tuning_id)
+    {
+    case POWERGOV_TUNING_PERIPHERAL_WIFI:
+        return t->peripheral_wifi;
+    case POWERGOV_TUNING_PERIPHERAL_SATA:
+        return t->peripheral_sata;
+    case POWERGOV_TUNING_PERIPHERAL_AUDIO:
+        return t->peripheral_audio;
+    default:
+        return 0;
+    }
+}
+
+static void update_battery_state_label(AppCtx *ctx)
+{
+    char line[96];
+    int on;
+    int thr;
+
+    if (!ctx || !ctx->battery_state_label)
+        return;
+
+    on = gtk_switch_get_active(GTK_SWITCH(ctx->battery_switch));
+    if (!on)
+    {
+        gtk_label_set_text(GTK_LABEL(ctx->battery_state_label),
+                           _(PG_TR_BATTERY_STATE_OFF));
+        return;
+    }
+
+    thr = (int)gtk_range_get_value(GTK_RANGE(ctx->battery_scale));
+    snprintf(line, sizeof(line), _(PG_TR_BATTERY_STATE_ON), thr);
+    gtk_label_set_text(GTK_LABEL(ctx->battery_state_label), line);
+}
+
+static void sync_periph_check(AppCtx *ctx, int idx, int on)
+{
+    int want;
+    int cur;
+
+    if (idx < 0 || idx >= 3 || !ctx->periph_checks[idx])
+        return;
+
+    want = on ? 1 : 0;
+    cur = gtk_toggle_button_get_active(
+              GTK_TOGGLE_BUTTON(ctx->periph_checks[idx])) ? 1 : 0;
+    if (cur == want)
+        return;
+
+    g_signal_handler_block(ctx->periph_checks[idx], ctx->periph_handlers[idx]);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctx->periph_checks[idx]),
+                                 want);
+    g_signal_handler_unblock(ctx->periph_checks[idx], ctx->periph_handlers[idx]);
+}
+
+#define PG_PERIPH_TUNING_KEY "pg_periph_tuning"
+
+static void periph_set_tuning(GtkWidget *chk, int tuning_id)
+{
+    /* GINT_TO_POINTER(0) is NULL and g_object_set_data removes the key. */
+    g_object_set_data(G_OBJECT(chk), PG_PERIPH_TUNING_KEY,
+                      GINT_TO_POINTER(tuning_id + 1));
+}
+
+static int periph_get_tuning(GtkWidget *chk)
+{
+    gpointer data = g_object_get_data(G_OBJECT(chk), PG_PERIPH_TUNING_KEY);
+
+    if (!data)
+        return -1;
+    return GPOINTER_TO_INT(data) - 1;
+}
+
+static void update_periph_checks_sensitive(AppCtx *ctx)
+{
+    int i;
+
+    if (!ctx)
+        return;
+
+    for (i = 0; i < 3; i++)
+    {
+        if (!ctx->periph_checks[i])
+            continue;
+        gtk_widget_set_sensitive(
+            ctx->periph_checks[i],
+            ctx->periph_tuning_synced && ctx->periph_pending[i] < 0);
+    }
+}
+
+static int periph_any_pending(const AppCtx *ctx)
+{
+    int i;
+
+    if (!ctx)
+        return 0;
+    for (i = 0; i < 3; i++)
+    {
+        if (ctx->periph_pending[i] >= 0)
+            return 1;
+    }
+    return 0;
+}
+
+static void sync_periph_checks_from_tuning(AppCtx *ctx, const UiSnapshot *s)
+{
+    int i;
+    int vals[3];
+
+    if (!ctx || !s || !s->tuning_ok || periph_any_pending(ctx))
+        return;
+
+    vals[0] = s->tuning.peripheral_wifi;
+    vals[1] = s->tuning.peripheral_sata;
+    vals[2] = s->tuning.peripheral_audio;
+
+    ctx->feature_ui_sync = 1;
+    for (i = 0; i < 3; i++)
+        sync_periph_check(ctx, i, vals[i]);
+    ctx->feature_ui_sync = 0;
+    ctx->periph_tuning_synced = 1;
+    update_periph_checks_sensitive(ctx);
 }
 
 static void apply_ui_theme(void)
@@ -575,7 +892,15 @@ static void apply_ui_theme(void)
         ".pg-advanced-label { color: #90A4AE; font-size: 9pt; "
         "margin-top: 6px; margin-bottom: 2px; }\n"
         ".pg-mode-smart { background-color: rgba(129, 199, 132, 0.08); "
-        "border-radius: 6px; }\n",
+        "border-radius: 6px; }\n"
+        ".pg-battery-box { margin-top: 6px; }\n"
+        ".pg-battery-state { color: #B0BEC5; font-size: 10pt; }\n"
+        ".pg-battery-scale { min-height: 28px; }\n"
+        ".pg-battery-scale trough { min-height: 6px; border-radius: 3px; }\n"
+        ".pg-battery-scale highlight { background-color: #81C784; "
+        "border-radius: 3px; }\n"
+        ".pg-battery-scale:disabled { opacity: 0.45; }\n"
+        ".pg-periph-pending { opacity: 0.65; }\n",
         -1, NULL);
     gtk_style_context_add_provider_for_screen(
         gdk_screen_get_default(),
@@ -620,6 +945,52 @@ static GdkPixbuf *load_brand_icon(int size)
     return NULL;
 }
 
+#define PG_TRAY_ICON_SIZE 22
+
+static GdkPixbuf *load_tray_icon(void)
+{
+    static const int src_sizes[] = { 24, 16, 32, 48, 64, 128, 256, 0 };
+    static const char *theme_names[] = {
+        "lightning",
+        "weather-lightning",
+        "battery-full-charging-symbolic",
+        "battery-full-charging",
+        NULL
+    };
+    GdkPixbuf *raw;
+    GdkPixbuf *scaled;
+    int i;
+
+    for (i = 0; src_sizes[i]; i++)
+    {
+        raw = load_brand_icon(src_sizes[i]);
+        if (!raw)
+            continue;
+        if (gdk_pixbuf_get_width(raw) == PG_TRAY_ICON_SIZE &&
+            gdk_pixbuf_get_height(raw) == PG_TRAY_ICON_SIZE)
+            return raw;
+
+        scaled = gdk_pixbuf_scale_simple(raw, PG_TRAY_ICON_SIZE, PG_TRAY_ICON_SIZE,
+                                         GDK_INTERP_BILINEAR);
+        g_object_unref(raw);
+        return scaled;
+    }
+
+    for (i = 0; theme_names[i]; i++)
+    {
+        GError *err = NULL;
+
+        raw = gtk_icon_theme_load_icon(gtk_icon_theme_get_default(),
+                                       theme_names[i], PG_TRAY_ICON_SIZE,
+                                       GTK_ICON_LOOKUP_FORCE_SIZE, &err);
+        g_clear_error(&err);
+        if (raw)
+            return raw;
+    }
+
+    return NULL;
+}
+
 static void apply_window_branding(GtkWindow *window)
 {
     GList *icons = NULL;
@@ -639,10 +1010,209 @@ static void apply_window_branding(GtkWindow *window)
     }
 }
 
+static void show_main_window(AppCtx *ctx)
+{
+    if (!ctx || !ctx->window)
+        return;
+
+    gtk_widget_show_all(ctx->window);
+    gtk_window_present(GTK_WINDOW(ctx->window));
+    ctx->window_focused = 1;
+    refresh_async(ctx);
+    refresh_timer_start(ctx);
+}
+
+static void quit_application(AppCtx *ctx)
+{
+    if (!ctx)
+        return;
+
+    if (ctx->tray_icon)
+    {
+        gtk_status_icon_set_visible(ctx->tray_icon, FALSE);
+        g_object_unref(ctx->tray_icon);
+        ctx->tray_icon = NULL;
+    }
+    if (ctx->window)
+        gtk_widget_destroy(ctx->window);
+}
+
+static void on_window_destroy(GtkWidget *widget, AppCtx *ctx)
+{
+    (void)widget;
+
+    if (!ctx)
+        return;
+
+    refresh_timer_stop(ctx);
+    if (ctx->battery_debounce_id)
+    {
+        g_source_remove(ctx->battery_debounce_id);
+        ctx->battery_debounce_id = 0;
+    }
+    if (ctx->feedback_timeout_id)
+    {
+        g_source_remove(ctx->feedback_timeout_id);
+        ctx->feedback_timeout_id = 0;
+    }
+    if (ctx->tray_icon)
+    {
+        gtk_status_icon_set_visible(ctx->tray_icon, FALSE);
+        g_object_unref(ctx->tray_icon);
+        ctx->tray_icon = NULL;
+    }
+    gtk_main_quit();
+}
+
+static void on_tray_show(GtkMenuItem *item, gpointer data)
+{
+    (void)item;
+    show_main_window((AppCtx *)data);
+}
+
+static void on_tray_quit(GtkMenuItem *item, gpointer data)
+{
+    (void)item;
+    quit_application((AppCtx *)data);
+}
+
+static void on_tray_popup_menu(GtkStatusIcon *icon, guint button, guint32 time,
+                               gpointer data)
+{
+    AppCtx *ctx = data;
+    GtkWidget *menu;
+    GtkWidget *show_item;
+    GtkWidget *quit_item;
+
+    (void)icon;
+    (void)button;
+    (void)time;
+
+    menu = gtk_menu_new();
+    show_item = gtk_menu_item_new_with_label(_(PG_TR_TRAY_SHOW));
+    quit_item = gtk_menu_item_new_with_label(_(PG_TR_TRAY_QUIT));
+    g_signal_connect(show_item, "activate", G_CALLBACK(on_tray_show), ctx);
+    g_signal_connect(quit_item, "activate", G_CALLBACK(on_tray_quit), ctx);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), show_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), quit_item);
+    gtk_widget_show_all(menu);
+    gtk_menu_popup_at_pointer(GTK_MENU(menu), NULL);
+}
+
+static void on_tray_activate(GtkStatusIcon *icon, gpointer data)
+{
+    (void)icon;
+    show_main_window((AppCtx *)data);
+}
+
+static void setup_tray_icon(AppCtx *ctx)
+{
+    GdkPixbuf *icon_pb;
+
+    if (!ctx || getenv("POWERGOV_NO_TRAY"))
+        return;
+
+    icon_pb = load_tray_icon();
+    ctx->tray_icon = gtk_status_icon_new();
+    if (icon_pb)
+    {
+        gtk_status_icon_set_from_pixbuf(ctx->tray_icon, icon_pb);
+        g_object_unref(icon_pb);
+    }
+    else
+        gtk_status_icon_set_from_icon_name(ctx->tray_icon, "lightning");
+
+    gtk_status_icon_set_tooltip_text(ctx->tray_icon, _(PG_TR_TRAY_TOOLTIP));
+    gtk_status_icon_set_visible(ctx->tray_icon, TRUE);
+    g_signal_connect(ctx->tray_icon, "activate", G_CALLBACK(on_tray_activate), ctx);
+    g_signal_connect(ctx->tray_icon, "popup-menu",
+                     G_CALLBACK(on_tray_popup_menu), ctx);
+}
+
+static gboolean on_window_delete_event(GtkWidget *widget, GdkEvent *event,
+                                       gpointer data)
+{
+    AppCtx *ctx = data;
+
+    (void)widget;
+    (void)event;
+
+    if (getenv("POWERGOV_NO_TRAY") || !ctx->tray_icon)
+        return FALSE;
+
+    gtk_widget_hide(ctx->window);
+    ctx->window_focused = 0;
+    refresh_timer_stop(ctx);
+    return TRUE;
+}
+
+static gboolean on_window_focus_in(GtkWidget *widget, GdkEventFocus *event,
+                                   gpointer data)
+{
+    AppCtx *ctx = data;
+
+    (void)widget;
+    (void)event;
+
+    ctx->window_focused = 1;
+    refresh_async(ctx);
+    refresh_timer_start(ctx);
+    return FALSE;
+}
+
+static gboolean on_window_focus_out(GtkWidget *widget, GdkEventFocus *event,
+                                    gpointer data)
+{
+    AppCtx *ctx = data;
+
+    (void)widget;
+    (void)event;
+
+    ctx->window_focused = 0;
+    refresh_timer_stop(ctx);
+    return FALSE;
+}
+
+static void on_main_tab_switch(GtkNotebook *notebook, GtkWidget *page,
+                               guint page_num, gpointer data)
+{
+    AppCtx *ctx = data;
+
+    (void)notebook;
+    (void)page;
+
+    ctx->main_tab_current = (int)page_num;
+    if (ctx->window_focused)
+        refresh_async(ctx);
+}
+
+static void on_dev_tab_switch(GtkNotebook *notebook, GtkWidget *page,
+                            guint page_num, gpointer data)
+{
+    AppCtx *ctx = data;
+
+    (void)notebook;
+    (void)page;
+
+    ctx->dev_tab_current = (int)page_num;
+    if (ctx->window_focused && dev_mode_active(ctx))
+        refresh_async(ctx);
+}
+
+static void update_custom_mode_visibility(AppCtx *ctx)
+{
+    if (ctx->mode_buttons[POWERGOV_USER_CUSTOM])
+    {
+        gtk_widget_set_visible(ctx->mode_buttons[POWERGOV_USER_CUSTOM],
+                               dev_mode_active(ctx));
+    }
+}
+
 static void update_dev_tab_access(AppCtx *ctx)
 {
     gtk_widget_set_sensitive(ctx->dev_notebook, ctx->dev_unlocked);
     gtk_widget_set_visible(ctx->dev_lock_banner, !ctx->dev_unlocked);
+    update_custom_mode_visibility(ctx);
     if (ctx->dev_unlocked)
         gtk_button_set_label(GTK_BUTTON(ctx->dev_btn), _(PG_TR_BTN_USER_MODE));
     else
@@ -999,13 +1569,22 @@ static void install_child_exit(GPid pid, gint status, gpointer data)
         ctx->service_installed = 1;
         append_action_log(ctx, _(PG_TR_LOG_INSTALL_OK));
         show_feedback(ctx, 1, _(PG_TR_FB_INSTALL_OK));
-        g_timeout_add(1500, refresh_async_idle, ctx);
+        g_timeout_add(1500, verify_install_idle, ctx);
+        g_timeout_add(2000, refresh_async_idle, ctx);
         g_clear_error(&err);
         return;
     }
 
-    show_feedback(ctx, 0, _(PG_TR_ERR_INSTALL_DENIED));
-    append_action_log(ctx, _(PG_TR_ERR_INSTALL_DENIED));
+    if (pkexec_exit_denied(status))
+    {
+        show_feedback(ctx, 0, _(PG_TR_ERR_INSTALL_DENIED));
+        append_action_log(ctx, _(PG_TR_ERR_INSTALL_DENIED));
+    }
+    else
+    {
+        show_feedback(ctx, 0, _(PG_TR_ERR_INSTALL_FAILED));
+        append_action_log(ctx, _(PG_TR_ERR_INSTALL_FAILED));
+    }
     g_clear_error(&err);
 }
 
@@ -1030,8 +1609,16 @@ static void uninstall_child_exit(GPid pid, gint status, gpointer data)
         return;
     }
 
-    show_feedback(ctx, 0, _(PG_TR_ERR_UNINSTALL_DENIED));
-    append_action_log(ctx, _(PG_TR_ERR_UNINSTALL_DENIED));
+    if (pkexec_exit_denied(status))
+    {
+        show_feedback(ctx, 0, _(PG_TR_ERR_UNINSTALL_DENIED));
+        append_action_log(ctx, _(PG_TR_ERR_UNINSTALL_DENIED));
+    }
+    else
+    {
+        show_feedback(ctx, 0, _(PG_TR_ERR_UNINSTALL_FAILED));
+        append_action_log(ctx, _(PG_TR_ERR_UNINSTALL_FAILED));
+    }
     g_clear_error(&err);
 }
 
@@ -1149,14 +1736,15 @@ static void start_install_async(AppCtx *ctx)
     cleanup_install_tmpdir(ctx);
 
     if (!resolve_install_helper(helper, sizeof(helper)) ||
-        !resolve_install_staging(staging, sizeof(staging)))
+        !resolve_install_staging(staging, sizeof(staging)) ||
+        !staging_bundle_complete(staging))
     {
         show_feedback(ctx, 0, _(PG_TR_ERR_INSTALL_UNAVAILABLE));
         append_action_log(ctx, _(PG_TR_ERR_INSTALL_UNAVAILABLE));
         return;
     }
 
-    if (path_on_appimage_mount(helper) || path_on_appimage_mount(staging))
+    if (path_needs_materialize(helper, staging))
         show_feedback(ctx, 1, _(PG_TR_FB_INSTALL_PREPARING));
 
     if (!materialize_install_bundle(ctx, helper, staging,
@@ -1201,6 +1789,15 @@ static int prompt_install_service(AppCtx *ctx)
 {
     GtkWidget *dlg;
     int response;
+    char staging[512];
+
+    if (!resolve_install_staging(staging, sizeof(staging)) ||
+        !staging_bundle_complete(staging))
+    {
+        show_feedback(ctx, 0, _(PG_TR_ERR_INSTALL_UNAVAILABLE));
+        append_action_log(ctx, _(PG_TR_ERR_INSTALL_UNAVAILABLE));
+        return 0;
+    }
 
     dlg = gtk_message_dialog_new(
         GTK_WINDOW(ctx->window),
@@ -1279,8 +1876,12 @@ static void run_polkit_service(AppCtx *ctx, const char *action)
 static void set_mode_sensitive(AppCtx *ctx, int sensitive)
 {
     int i;
-    for (i = 0; i < 3; i++)
-        gtk_widget_set_sensitive(ctx->mode_buttons[i], sensitive);
+
+    for (i = 0; i < PG_USER_MODE_COUNT; i++)
+    {
+        if (ctx->mode_buttons[i])
+            gtk_widget_set_sensitive(ctx->mode_buttons[i], sensitive);
+    }
     gtk_widget_set_sensitive(ctx->battery_switch, sensitive);
     gtk_widget_set_sensitive(ctx->battery_scale, sensitive);
 }
@@ -1288,20 +1889,26 @@ static void set_mode_sensitive(AppCtx *ctx, int sensitive)
 static void update_service_buttons(AppCtx *ctx, int systemd_active)
 {
     int dev = dev_mode_active(ctx);
-    const char *primary = ctx->service_installed
-                              ? _(PG_TR_BTN_START_SERVICE)
-                              : _(PG_TR_BTN_INSTALL_SERVICE);
+    int recovery = ctx->service_installed && !ctx->daemon_up;
+    const char *primary;
+
+    if (!ctx->service_installed)
+        primary = _(PG_TR_BTN_INSTALL_SERVICE);
+    else if (recovery)
+        primary = _(PG_TR_BTN_RECOVERY_RESTART);
+    else
+        primary = _(PG_TR_BTN_START_SERVICE);
 
     gtk_widget_set_visible(ctx->service_box, dev || !ctx->daemon_up);
     gtk_button_set_label(GTK_BUTTON(ctx->start_btn), primary);
     gtk_widget_set_visible(ctx->stop_btn, dev);
-    gtk_widget_set_visible(ctx->restart_btn, dev);
+    gtk_widget_set_visible(ctx->restart_btn, dev || recovery);
     if (ctx->service_installed)
-        gtk_widget_set_sensitive(ctx->start_btn, !systemd_active);
+        gtk_widget_set_sensitive(ctx->start_btn, recovery || !systemd_active);
     else
         gtk_widget_set_sensitive(ctx->start_btn, !ctx->install_busy);
     gtk_widget_set_sensitive(ctx->stop_btn, systemd_active);
-    gtk_widget_set_sensitive(ctx->restart_btn, systemd_active);
+    gtk_widget_set_sensitive(ctx->restart_btn, systemd_active || recovery);
     if (ctx->uninstall_btn)
     {
         gtk_widget_set_visible(ctx->uninstall_btn, ctx->service_installed);
@@ -1325,7 +1932,8 @@ static void apply_dev_panels(AppCtx *ctx, const UiSnapshot *s)
         snprintf(block, sizeof(block), _(PG_TR_SYS_FMT),
                  s->sys.pretty_name, s->sys.kernel, s->sys.powergov_version,
                  s->sys.systemd_active ? _(PG_TR_ACTIVE) : _(PG_TR_INACTIVE),
-                 s->sys.ppd_detected ? _(PG_TR_YES) : _(PG_TR_NO));
+                 s->sys.ppd_detected ? _(PG_TR_YES) : _(PG_TR_NO),
+                 s->sys.tlp_detected ? _(PG_TR_YES) : _(PG_TR_NO));
         fill_text_view(ctx->sys_view, block);
     }
 
@@ -1399,6 +2007,94 @@ static void apply_dev_panels(AppCtx *ctx, const UiSnapshot *s)
     }
 }
 
+static void snapshot_note_daemon_version(UiSnapshot *s, int api_too_old)
+{
+    s->daemon_api_old = api_too_old ? 1 : 0;
+
+    if (s->sys_ok && s->sys.powergov_version[0])
+    {
+        g_strlcpy(s->daemon_version, s->sys.powergov_version,
+                  sizeof(s->daemon_version));
+    }
+    else if (s->st_ok &&
+             powergov_probe_installed_daemon_version(
+                 s->daemon_version, sizeof(s->daemon_version)))
+    {
+        /* keep probed version */
+    }
+    else
+        s->daemon_version[0] = '\0';
+
+    s->daemon_outdated =
+        pg_daemon_version_outdated(s->daemon_version, s->daemon_api_old);
+}
+
+static int staging_bundle_complete(const char *dir)
+{
+    static const char *const required[] = {
+        "powergov", "libpowergov.so", "powergov.conf", "powergov.service",
+        "org.powergov.policy", "dev-auth", "powergov-uninstall.sh",
+        "remove-appimage-user-files.sh", NULL
+    };
+    char path[512];
+    int i;
+
+    if (!dir || !dir[0])
+        return 0;
+
+    for (i = 0; required[i]; i++)
+    {
+        snprintf(path, sizeof(path), "%s/%s", dir, required[i]);
+        if (access(path, F_OK) != 0)
+            return 0;
+    }
+    return staging_has_daemon(dir);
+}
+
+static int pkexec_exit_denied(gint status)
+{
+    if (WIFEXITED(status))
+    {
+        int code = WEXITSTATUS(status);
+        return code == 126 || code == 127;
+    }
+    return 0;
+}
+
+static gboolean verify_install_idle(gpointer data)
+{
+    AppCtx *ctx = data;
+    powergov_reply_status_t st;
+
+    if (powergov_client_query_status(&st) == 0)
+    {
+        refresh_async(ctx);
+        return G_SOURCE_REMOVE;
+    }
+
+    show_feedback(ctx, 0, _(PG_TR_FB_INSTALL_VERIFY_WARN));
+    append_action_log(ctx, _(PG_TR_FB_INSTALL_VERIFY_WARN));
+    return G_SOURCE_REMOVE;
+}
+
+static void maybe_prompt_daemon_upgrade(AppCtx *ctx, const char *daemon_ver,
+                                        int api_too_old)
+{
+    if (!ctx || ctx->daemon_upgrade_prompted)
+        return;
+    if (!pg_daemon_version_outdated(daemon_ver, api_too_old))
+        return;
+
+    ctx->daemon_upgrade_prompted = 1;
+    pg_daemon_upgrade_prompt(GTK_WINDOW(ctx->window), daemon_ver, api_too_old,
+                             on_daemon_upgrade_install, ctx);
+}
+
+static void on_daemon_upgrade_install(gpointer data)
+{
+    start_install_async((AppCtx *)data);
+}
+
 static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
 {
     char line[512];
@@ -1429,6 +2125,15 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
             ctx->startup_prompt_done = 1;
             g_idle_add(startup_install_prompt_idle, ctx);
         }
+        else if (s->service_installed && s->systemd_active &&
+                 !ctx->daemon_upgrade_prompted)
+        {
+            char ver[64];
+
+            ver[0] = '\0';
+            powergov_probe_installed_daemon_version(ver, sizeof(ver));
+            maybe_prompt_daemon_upgrade(ctx, ver, 0);
+        }
 
         g_free(s);
         return;
@@ -1445,9 +2150,15 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
     set_mode_sensitive(ctx, TRUE);
     update_service_buttons(ctx, 1);
 
-    snprintf(line, sizeof(line), _(PG_TR_STATUS_ACTIVE_PROFILE),
-             pg_user_mode_title((powergov_user_mode_t)s->st.user_mode));
-    gtk_label_set_text(GTK_LABEL(ctx->status_label), line);
+    if (s->daemon_outdated)
+        gtk_label_set_text(GTK_LABEL(ctx->status_label),
+                           _(PG_TR_STATUS_DAEMON_OLD));
+    else
+    {
+        snprintf(line, sizeof(line), _(PG_TR_STATUS_ACTIVE_PROFILE),
+                 pg_user_mode_title((powergov_user_mode_t)s->st.user_mode));
+        gtk_label_set_text(GTK_LABEL(ctx->status_label), line);
+    }
 
     if (s->st.battery_pct >= 0)
     {
@@ -1461,36 +2172,168 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
     gtk_label_set_text(GTK_LABEL(ctx->power_label), line);
 
     ctx->ui_sync = 1;
-    for (i = 0; i < 3; i++)
-        g_signal_handler_block(ctx->mode_buttons[i], ctx->mode_handlers[i]);
-
-    for (i = 0; i < 3; i++)
+    for (i = 0; i < PG_USER_MODE_COUNT; i++)
     {
+        if (!ctx->mode_buttons[i])
+            continue;
+        g_signal_handler_block(ctx->mode_buttons[i], ctx->mode_handlers[i]);
+    }
+
+    for (i = 0; i < PG_USER_MODE_COUNT; i++)
+    {
+        if (!ctx->mode_buttons[i])
+            continue;
         gtk_toggle_button_set_active(
             GTK_TOGGLE_BUTTON(ctx->mode_buttons[i]), s->st.user_mode == i);
     }
 
-    for (i = 0; i < 3; i++)
+    for (i = 0; i < PG_USER_MODE_COUNT; i++)
+    {
+        if (!ctx->mode_buttons[i])
+            continue;
         g_signal_handler_unblock(ctx->mode_buttons[i], ctx->mode_handlers[i]);
+    }
 
     g_signal_handler_block(ctx->battery_switch, ctx->battery_sw_handler);
     gtk_switch_set_active(GTK_SWITCH(ctx->battery_switch),
                           s->st.battery_safe_enabled);
     g_signal_handler_unblock(ctx->battery_switch, ctx->battery_sw_handler);
 
-    if (s->st.battery_threshold > 0)
+    if (ctx->ui_action_inflight == 0)
     {
-        double cur = gtk_range_get_value(GTK_RANGE(ctx->battery_scale));
-        if ((int)cur != s->st.battery_threshold)
-            gtk_range_set_value(GTK_RANGE(ctx->battery_scale),
-                               s->st.battery_threshold);
+        if (s->st.battery_threshold > 0)
+        {
+            double cur = gtk_range_get_value(GTK_RANGE(ctx->battery_scale));
+            if ((int)cur != s->st.battery_threshold)
+                gtk_range_set_value(GTK_RANGE(ctx->battery_scale),
+                                   s->st.battery_threshold);
+        }
+        gtk_widget_set_sensitive(ctx->battery_scale,
+                                 s->st.battery_safe_enabled);
+        update_battery_state_label(ctx);
     }
     ctx->ui_sync = 0;
+
+    ctx->tlp_active_cached = s->sys_ok && s->sys.tlp_detected;
+    if (ctx->tlp_banner)
+        gtk_widget_set_visible(ctx->tlp_banner, ctx->tlp_active_cached);
+
+    if (dev_mode_active(ctx) && s->st_ok)
+    {
+        ctx->feature_ui_sync = 1;
+        if (ctx->ui_action_inflight == 0)
+        {
+            for (i = 0; i < POWERGOV_FEATURE_COUNT; i++)
+            {
+                int on = (s->st.features_mask >> i) & 1;
+                int tlp_block = ctx->tlp_active_cached &&
+                                  (i == POWERGOV_FEATURE_RUNTIME_PM ||
+                                   i == POWERGOV_FEATURE_PERIPHERAL_PM);
+
+                if (ctx->feature_checks[i])
+                {
+                    gtk_widget_set_sensitive(ctx->feature_checks[i], !tlp_block);
+                    g_signal_handler_block(ctx->feature_checks[i],
+                                           ctx->feature_handlers[i]);
+                    gtk_toggle_button_set_active(
+                        GTK_TOGGLE_BUTTON(ctx->feature_checks[i]), on);
+                    g_signal_handler_unblock(ctx->feature_checks[i],
+                                             ctx->feature_handlers[i]);
+                }
+            }
+        }
+
+        if (s->tuning_ok)
+            sync_periph_checks_from_tuning(ctx, s);
+        ctx->feature_ui_sync = 0;
+    }
 
     if (dev_mode_active(ctx))
         apply_dev_panels(ctx, s);
 
+    if (s->daemon_outdated && !ctx->daemon_upgrade_prompted)
+        maybe_prompt_daemon_upgrade(ctx, s->daemon_version, s->daemon_api_old);
+
     g_free(s);
+}
+
+static void snapshot_note_daemon_version(UiSnapshot *s, int api_too_old);
+
+static void snapshot_apply_bundle(UiSnapshot *s, unsigned int mask,
+                                  const powergov_reply_bundle_t *bundle)
+{
+    if (!s || !bundle)
+        return;
+
+    if (mask & POWERGOV_BUNDLE_STATUS)
+    {
+        s->st = bundle->status;
+        s->st_ok = 1;
+    }
+    if (mask & POWERGOV_BUNDLE_SYSTEM)
+    {
+        s->sys = bundle->system;
+        s->sys_ok = 1;
+    }
+    if (mask & POWERGOV_BUNDLE_CPU)
+    {
+        s->cpu = bundle->cpu;
+        s->cpu_ok = 1;
+    }
+    if (mask & POWERGOV_BUNDLE_COMPAT)
+    {
+        s->compat = bundle->compat;
+        s->compat_ok = 1;
+    }
+    if (mask & POWERGOV_BUNDLE_METRICS)
+    {
+        s->metrics = bundle->metrics;
+        s->metrics_ok = 1;
+    }
+    if (mask & POWERGOV_BUNDLE_LOG)
+    {
+        s->log = bundle->log;
+        s->log_ok = 1;
+    }
+}
+
+static void snapshot_fetch_mask_fallback(UiSnapshot *s, unsigned int mask,
+                                         int log_lines)
+{
+    if (!s || !mask)
+        return;
+
+    if ((mask & POWERGOV_BUNDLE_STATUS) && !s->st_ok)
+        s->st_ok = (powergov_client_query_status(&s->st) == 0);
+    if ((mask & POWERGOV_BUNDLE_SYSTEM) && !s->sys_ok)
+        s->sys_ok = (powergov_client_query_system(&s->sys) == 0);
+    if ((mask & POWERGOV_BUNDLE_CPU) && !s->cpu_ok)
+        s->cpu_ok = (powergov_client_query_cpu(&s->cpu) == 0);
+    if ((mask & POWERGOV_BUNDLE_COMPAT) && !s->compat_ok)
+        s->compat_ok = (powergov_client_query_compat(&s->compat) == 0);
+    if ((mask & POWERGOV_BUNDLE_METRICS) && !s->metrics_ok)
+        s->metrics_ok = (powergov_client_query_metrics(&s->metrics) == 0);
+    if ((mask & POWERGOV_BUNDLE_LOG) && !s->log_ok)
+        s->log_ok = (powergov_client_query_log(log_lines > 0 ? log_lines : 80,
+                                               &s->log) == 0);
+}
+
+static void snapshot_finalize_daemon_state(UiSnapshot *s)
+{
+    if (!s)
+        return;
+
+    if (s->st_ok)
+        s->daemon_up = 1;
+    else if (s->metrics_ok || s->log_ok || s->sys_ok || s->cpu_ok || s->compat_ok)
+        s->daemon_up = 1;
+    else
+        s->daemon_up = 0;
+
+    if (s->daemon_up)
+        s->systemd_active = 1;
+    else
+        s->systemd_active = pidfile_daemon_alive();
 }
 
 static void snapshot_worker(GTask *task, gpointer source, gpointer data,
@@ -1504,43 +2347,34 @@ static void snapshot_worker(GTask *task, gpointer source, gpointer data,
 
     s->service_installed = powergov_service_installed();
 
-    if (s->fetch_dev)
+    if (s->fetch_dev_mask)
     {
         powergov_reply_bundle_t bundle;
+        int log_lines = (s->fetch_dev_mask & POWERGOV_BUNDLE_LOG) ? 80 : 0;
 
-        if (powergov_client_query_bundle(POWERGOV_BUNDLE_DEV_ALL, 80, &bundle) == 0)
-        {
-            s->st = bundle.status;
-            s->sys = bundle.system;
-            s->cpu = bundle.cpu;
-            s->compat = bundle.compat;
-            s->metrics = bundle.metrics;
-            s->log = bundle.log;
-            s->st_ok = 1;
-            s->sys_ok = 1;
-            s->cpu_ok = 1;
-            s->compat_ok = 1;
-            s->metrics_ok = 1;
-            s->log_ok = 1;
-            s->daemon_up = 1;
-            s->systemd_active = 1;
-        }
+        if (powergov_client_query_bundle(s->fetch_dev_mask, log_lines,
+                                         &bundle) == 0)
+            snapshot_apply_bundle(s, s->fetch_dev_mask, &bundle);
         else
-        {
-            s->daemon_up = 0;
-            s->systemd_active = pidfile_daemon_alive();
-        }
+            snapshot_fetch_mask_fallback(s, s->fetch_dev_mask, log_lines);
 
+        snapshot_finalize_daemon_state(s);
+
+        if (s->fetch_tuning)
+            s->tuning_ok = (powergov_client_query_tuning(&s->tuning) == 0);
+
+        snapshot_note_daemon_version(s, 0);
         g_task_return_pointer(task, s, NULL);
         return;
     }
 
     s->st_ok = (powergov_client_query_status(&s->st) == 0);
-    s->daemon_up = s->st_ok;
-    if (!s->daemon_up)
-        s->systemd_active = pidfile_daemon_alive();
-    else
-        s->systemd_active = 1;
+    snapshot_finalize_daemon_state(s);
+    if (s->daemon_up)
+    {
+        s->sys_ok = (powergov_client_query_system(&s->sys) == 0);
+        snapshot_note_daemon_version(s, 0);
+    }
 
     g_task_return_pointer(task, s, NULL);
 }
@@ -1573,7 +2407,12 @@ static void refresh_async(AppCtx *ctx)
     ctx->refresh_busy = 1;
     s = g_new0(UiSnapshot, 1);
     s->ctx = ctx;
-    s->fetch_dev = dev_mode_active(ctx);
+    s->fetch_dev_mask = (int)compute_fetch_mask(ctx);
+    s->fetch_tuning =
+        (dev_mode_active(ctx) &&
+         (ctx->dev_tab_current == 5 || ctx->ui_action_inflight > 0))
+            ? 1
+            : 0;
 
     task = g_task_new(NULL, NULL, snapshot_done, ctx);
     g_task_set_task_data(task, s, NULL);
@@ -1612,6 +2451,35 @@ static void user_action_worker(GTask *task, gpointer source, gpointer data,
                             (!r->battery_on ||
                              r->st.battery_threshold == r->battery_thr));
         }
+    }
+    else if (r->kind == UI_ACT_SET_FEATURE)
+    {
+        r->send_ok = (powergov_client_set_feature(
+                          (powergov_feature_id_t)r->feature_id,
+                          r->feature_on) == 0);
+        if (r->send_ok)
+        {
+            r->verify_ok = (powergov_client_query_status(&r->st) == 0 &&
+                            !!((r->st.features_mask >> r->feature_id) & 1) ==
+                            !!r->feature_on);
+        }
+    }
+    else if (r->kind == UI_ACT_SET_TUNING)
+    {
+        r->send_ok = (powergov_client_set_tuning(
+                          (powergov_tuning_id_t)r->tuning_id,
+                          r->tuning_value) == 0);
+        if (r->send_ok)
+        {
+            powergov_reply_tuning_t tuning;
+
+            r->verify_ok =
+                (powergov_client_query_tuning(&tuning) == 0 &&
+                 !!tuning_value_from_reply(&tuning, r->tuning_id) ==
+                     !!r->tuning_value);
+        }
+        else
+            r->verify_ok = 0;
     }
 
     g_task_return_pointer(task, r, NULL);
@@ -1682,9 +2550,94 @@ static void user_action_done(GObject *src, GAsyncResult *res, gpointer data)
             show_feedback(ctx, 1, _(PG_TR_FB_BATTERY_OFF));
         }
     }
+    else if (r->kind == UI_ACT_SET_FEATURE)
+    {
+        const char *name =
+            pg_feature_label((powergov_feature_id_t)r->feature_id);
+        const char *state = r->feature_on ? _(PG_TR_ACTIVE) : _(PG_TR_INACTIVE);
+
+        if (!r->send_ok || !r->verify_ok)
+        {
+            if (ctx->tlp_active_cached &&
+                (r->feature_id == POWERGOV_FEATURE_RUNTIME_PM ||
+                 r->feature_id == POWERGOV_FEATURE_PERIPHERAL_PM) &&
+                r->feature_on)
+            {
+                show_feedback(ctx, 0, _(PG_TR_ERR_FEATURE_TLP));
+            }
+            else
+            {
+                snprintf(logline, sizeof(logline), _(PG_TR_LOG_FEATURE_FAIL),
+                         name);
+                show_feedback(ctx, 0, logline);
+            }
+        }
+        else
+        {
+            snprintf(logline, sizeof(logline), _(PG_TR_LOG_FEATURE_OK),
+                     name, state);
+            show_feedback(ctx, 1, logline);
+        }
+    }
+    else if (r->kind == UI_ACT_SET_TUNING)
+    {
+        int idx = periph_index_from_tuning(r->tuning_id);
+
+        if (idx >= 0 && ctx->periph_checks[idx])
+        {
+            gtk_style_context_remove_class(
+                gtk_widget_get_style_context(ctx->periph_checks[idx]),
+                "pg-periph-pending");
+        }
+        update_periph_checks_sensitive(ctx);
+
+        if (!r->send_ok || !r->verify_ok)
+        {
+            powergov_reply_tuning_t tuning;
+
+            snprintf(logline, sizeof(logline), "%s", _(PG_TR_LOG_TUNING_FAIL));
+            show_feedback(ctx, 0, _(PG_TR_LOG_TUNING_FAIL));
+            if (idx >= 0)
+                ctx->periph_pending[idx] = -1;
+            if (powergov_client_query_tuning(&tuning) == 0)
+            {
+                UiSnapshot snap;
+
+                memset(&snap, 0, sizeof(snap));
+                snap.tuning_ok = 1;
+                snap.tuning = tuning;
+                sync_periph_checks_from_tuning(ctx, &snap);
+            }
+        }
+        else
+        {
+            if (idx >= 0)
+                ctx->periph_pending[idx] = -1;
+            snprintf(logline, sizeof(logline), "%s", _(PG_TR_LOG_TUNING_OK));
+            show_feedback(ctx, 1, _(PG_TR_LOG_TUNING_OK));
+        }
+    }
+
+    if (ctx->ui_action_inflight > 0)
+        ctx->ui_action_inflight--;
 
     append_action_log(ctx, logline);
-    refresh_async(ctx);
+    if (r->kind == UI_ACT_SET_TUNING)
+    {
+        powergov_reply_tuning_t tuning;
+
+        if (powergov_client_query_tuning(&tuning) == 0)
+        {
+            UiSnapshot snap;
+
+            memset(&snap, 0, sizeof(snap));
+            snap.tuning_ok = 1;
+            snap.tuning = tuning;
+            sync_periph_checks_from_tuning(ctx, &snap);
+        }
+    }
+    else
+        refresh_async(ctx);
     g_free(r);
 }
 
@@ -1692,6 +2645,7 @@ static void run_user_action_async(AppCtx *ctx, UiActionResult *r)
 {
     GTask *task;
 
+    ctx->ui_action_inflight++;
     task = g_task_new(NULL, NULL, user_action_done, ctx);
     g_task_set_task_data(task, r, NULL);
     g_task_run_in_thread(task, user_action_worker);
@@ -1701,6 +2655,8 @@ static void run_user_action_async(AppCtx *ctx, UiActionResult *r)
 static void enter_dev_mode(AppCtx *ctx)
 {
     ctx->dev_unlocked = 1;
+    ctx->dev_tab_current =
+        gtk_notebook_get_current_page(GTK_NOTEBOOK(ctx->dev_notebook));
     update_dev_tab_access(ctx);
     update_service_buttons(ctx, ctx->daemon_up);
     gtk_notebook_set_current_page(GTK_NOTEBOOK(ctx->main_notebook), 1);
@@ -1783,6 +2739,73 @@ static gboolean on_timer(gpointer data)
     return G_SOURCE_CONTINUE;
 }
 
+static void on_feature_toggled(GtkToggleButton *btn, gpointer data)
+{
+    AppCtx *ctx = data;
+    UiActionResult *r;
+    int id;
+
+    if (ctx->feature_ui_sync)
+        return;
+
+    id = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(btn), "feature_id"));
+    if (id < 0 || id >= POWERGOV_FEATURE_COUNT)
+        return;
+
+    if (!ensure_daemon_for_action(ctx))
+    {
+        refresh_async(ctx);
+        return;
+    }
+
+    r = g_new0(UiActionResult, 1);
+    r->kind = UI_ACT_SET_FEATURE;
+    r->feature_id = id;
+    r->feature_on = gtk_toggle_button_get_active(btn) ? 1 : 0;
+    run_user_action_async(ctx, r);
+}
+
+static void on_periph_toggled(GtkToggleButton *btn, gpointer data)
+{
+    AppCtx *ctx = data;
+    UiActionResult *r;
+    int idx;
+    int tuning_id;
+    int value;
+
+    if (ctx->feature_ui_sync)
+        return;
+
+    if (!ctx->periph_tuning_synced)
+        return;
+
+    tuning_id = periph_get_tuning(GTK_WIDGET(btn));
+    idx = periph_index_from_tuning(tuning_id);
+    if (idx < 0 || idx >= 3 || tuning_id < 0)
+        return;
+
+    value = gtk_toggle_button_get_active(btn) ? 1 : 0;
+
+    if (!ensure_daemon_for_action(ctx))
+    {
+        sync_periph_check(ctx, idx, !value);
+        refresh_async(ctx);
+        return;
+    }
+
+    ctx->periph_pending[idx] = value;
+    update_periph_checks_sensitive(ctx);
+    gtk_style_context_add_class(
+        gtk_widget_get_style_context(ctx->periph_checks[idx]),
+        "pg-periph-pending");
+
+    r = g_new0(UiActionResult, 1);
+    r->kind = UI_ACT_SET_TUNING;
+    r->tuning_id = tuning_id;
+    r->tuning_value = value;
+    run_user_action_async(ctx, r);
+}
+
 static void on_mode_toggled(GtkToggleButton *btn, gpointer data)
 {
     AppCtx *ctx = data;
@@ -1828,15 +2851,43 @@ static void apply_battery_setting(AppCtx *ctx)
     run_user_action_async(ctx, r);
 }
 
+static gboolean battery_debounce_cb(gpointer data)
+{
+    AppCtx *ctx = data;
+
+    ctx->battery_debounce_id = 0;
+    apply_battery_setting(ctx);
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean on_battery_scale_changed(GtkRange *range, gpointer data)
+{
+    AppCtx *ctx = data;
+
+    (void)range;
+    if (ctx->ui_sync)
+        return FALSE;
+    if (!gtk_switch_get_active(GTK_SWITCH(ctx->battery_switch)))
+        return FALSE;
+
+    update_battery_state_label(ctx);
+
+    if (ctx->battery_debounce_id)
+        g_source_remove(ctx->battery_debounce_id);
+    ctx->battery_debounce_id = g_timeout_add(450, battery_debounce_cb, ctx);
+    return FALSE;
+}
+
 static gboolean on_battery_switch(GtkSwitch *sw, gboolean state, gpointer data)
 {
     AppCtx *ctx = data;
 
     (void)sw;
-    (void)state;
     if (ctx->ui_sync)
         return FALSE;
 
+    gtk_widget_set_sensitive(ctx->battery_scale, state);
+    update_battery_state_label(ctx);
     apply_battery_setting(ctx);
     return FALSE;
 }
@@ -1851,6 +2902,11 @@ static gboolean on_battery_scale_release(GtkWidget *widget, GdkEventButton *ev,
     if (ctx->ui_sync || !gtk_switch_get_active(GTK_SWITCH(ctx->battery_switch)))
         return FALSE;
 
+    if (ctx->battery_debounce_id)
+    {
+        g_source_remove(ctx->battery_debounce_id);
+        ctx->battery_debounce_id = 0;
+    }
     apply_battery_setting(ctx);
     return FALSE;
 }
@@ -1885,7 +2941,10 @@ static void on_service_start(GtkButton *b, gpointer data)
         return;
     }
 
-    run_polkit_service(ctx, "start");
+    if (!ctx->daemon_up)
+        run_polkit_service(ctx, "restart");
+    else
+        run_polkit_service(ctx, "start");
 }
 
 static void on_service_stop(GtkButton *b, gpointer data)
@@ -1988,7 +3047,7 @@ static void refresh_mode_button_labels(AppCtx *ctx)
 {
     int i;
 
-    for (i = 0; i < 3; i++)
+    for (i = 0; i < PG_USER_MODE_COUNT; i++)
     {
         GtkWidget *btn = ctx->mode_buttons[i];
         GtkWidget *title;
@@ -2012,6 +3071,43 @@ static void refresh_mode_button_labels(AppCtx *ctx)
     }
 }
 
+static void refresh_features_page_labels(AppCtx *ctx)
+{
+    static const PgTr periph_labels[] = {
+        PG_TR_FEAT_PERIPH_WIFI, PG_TR_FEAT_PERIPH_SATA, PG_TR_FEAT_PERIPH_AUDIO
+    };
+    int i;
+
+    if (!ctx)
+        return;
+
+    if (ctx->tlp_banner)
+        gtk_label_set_text(GTK_LABEL(ctx->tlp_banner), _(PG_TR_TLP_WARN_BANNER));
+    if (ctx->features_section_label)
+        gtk_label_set_text(GTK_LABEL(ctx->features_section_label),
+                           _(PG_TR_LABEL_FEATURES));
+    if (ctx->peripheral_section_label)
+        gtk_label_set_text(GTK_LABEL(ctx->peripheral_section_label),
+                           _(PG_TR_LABEL_PERIPHERAL));
+
+    for (i = 0; i < POWERGOV_FEATURE_COUNT; i++)
+    {
+        if (!ctx->feature_checks[i])
+            continue;
+        gtk_button_set_label(
+            GTK_BUTTON(ctx->feature_checks[i]),
+            pg_feature_label((powergov_feature_id_t)i));
+    }
+
+    for (i = 0; i < 3; i++)
+    {
+        if (!ctx->periph_checks[i])
+            continue;
+        gtk_button_set_label(GTK_BUTTON(ctx->periph_checks[i]),
+                             _(periph_labels[i]));
+    }
+}
+
 static void invalidate_dev_panel_cache(AppCtx *ctx)
 {
     ctx->dev_log_initialized = 0;
@@ -2024,7 +3120,7 @@ static void refresh_ui_language(AppCtx *ctx)
 {
     PgTr dev_tab_ids[] = {
         PG_TR_TAB_SYSTEM, PG_TR_TAB_CPU, PG_TR_TAB_COMPAT,
-        PG_TR_TAB_METRICS, PG_TR_TAB_LOG
+        PG_TR_TAB_METRICS, PG_TR_TAB_LOG, PG_TR_TAB_FEATURES
     };
     int i;
 
@@ -2038,12 +3134,7 @@ static void refresh_ui_language(AppCtx *ctx)
         gtk_widget_set_tooltip_text(ctx->lang_btn, pg_lang_button_tooltip());
     }
 
-    gtk_button_set_label(GTK_BUTTON(ctx->start_btn),
-                         ctx->service_installed
-                             ? _(PG_TR_BTN_START_SERVICE)
-                             : _(PG_TR_BTN_INSTALL_SERVICE));
-    gtk_button_set_label(GTK_BUTTON(ctx->stop_btn), _(PG_TR_BTN_STOP));
-    gtk_button_set_label(GTK_BUTTON(ctx->restart_btn), _(PG_TR_BTN_RESTART));
+    update_service_buttons(ctx, ctx->daemon_up ? 1 : pidfile_daemon_alive());
     if (ctx->uninstall_btn)
         gtk_button_set_label(GTK_BUTTON(ctx->uninstall_btn),
                              _(PG_TR_BTN_UNINSTALL));
@@ -2052,6 +3143,7 @@ static void refresh_ui_language(AppCtx *ctx)
     if (ctx->battery_label)
         gtk_label_set_text(GTK_LABEL(ctx->battery_label),
                            _(PG_TR_LABEL_BATTERY_PROTECT));
+    update_battery_state_label(ctx);
     if (ctx->profile_hint_label)
     {
         gtk_label_set_text(GTK_LABEL(ctx->profile_hint_label),
@@ -2073,14 +3165,17 @@ static void refresh_ui_language(AppCtx *ctx)
     notebook_tab_set_text(GTK_NOTEBOOK(ctx->main_notebook), 1,
                           _(PG_TR_TAB_DIAGNOSTIC));
 
-    for (i = 0; i < 5; i++)
+    for (i = 0; i < PG_DEV_TAB_COUNT; i++)
     {
         notebook_tab_set_text(GTK_NOTEBOOK(ctx->dev_notebook), i,
                             _(dev_tab_ids[i]));
     }
 
     refresh_mode_button_labels(ctx);
+    refresh_features_page_labels(ctx);
     invalidate_dev_panel_cache(ctx);
+    if (ctx->tray_icon)
+        gtk_status_icon_set_tooltip_text(ctx->tray_icon, _(PG_TR_TRAY_TOOLTIP));
     refresh_async(ctx);
 }
 
@@ -2091,6 +3186,83 @@ static void on_lang_btn_clicked(GtkButton *btn, gpointer data)
     (void)btn;
     pg_i18n_toggle();
     refresh_ui_language(ctx);
+}
+
+static GtkWidget *make_features_page(AppCtx *ctx);
+static void on_feature_toggled(GtkToggleButton *btn, gpointer data);
+static void on_periph_toggled(GtkToggleButton *btn, gpointer data);
+
+static GtkWidget *make_features_page(AppCtx *ctx)
+{
+    GtkWidget *page;
+    GtkWidget *scroll;
+    GtkWidget *inner;
+    static const struct
+    {
+        PgTr label;
+        powergov_tuning_id_t tuning_id;
+    } periph_rows[] = {
+        { PG_TR_FEAT_PERIPH_WIFI,  POWERGOV_TUNING_PERIPHERAL_WIFI },
+        { PG_TR_FEAT_PERIPH_SATA,  POWERGOV_TUNING_PERIPHERAL_SATA },
+        { PG_TR_FEAT_PERIPH_AUDIO, POWERGOV_TUNING_PERIPHERAL_AUDIO }
+    };
+    int i;
+
+    page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    scroll = gtk_scrolled_window_new(NULL, NULL);
+    inner = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+
+    ctx->tlp_banner = gtk_label_new(_(PG_TR_TLP_WARN_BANNER));
+    gtk_label_set_line_wrap(GTK_LABEL(ctx->tlp_banner), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(ctx->tlp_banner), 0.0);
+    gtk_widget_set_visible(ctx->tlp_banner, FALSE);
+    gtk_box_pack_start(GTK_BOX(inner), ctx->tlp_banner, FALSE, FALSE, 0);
+
+    ctx->features_section_label = gtk_label_new(_(PG_TR_LABEL_FEATURES));
+    gtk_label_set_xalign(GTK_LABEL(ctx->features_section_label), 0.0);
+    gtk_box_pack_start(GTK_BOX(inner), ctx->features_section_label,
+                       FALSE, FALSE, 0);
+
+    for (i = 0; i < POWERGOV_FEATURE_COUNT; i++)
+    {
+        GtkWidget *row =
+            gtk_check_button_new_with_label(pg_feature_label(
+                (powergov_feature_id_t)i));
+
+        ctx->feature_checks[i] = row;
+        g_object_set_data(G_OBJECT(row), "feature_id", GINT_TO_POINTER(i));
+        ctx->feature_handlers[i] = g_signal_connect(
+            row, "toggled", G_CALLBACK(on_feature_toggled), ctx);
+        gtk_box_pack_start(GTK_BOX(inner), row, FALSE, FALSE, 0);
+    }
+
+    ctx->peripheral_section_label = gtk_label_new(_(PG_TR_LABEL_PERIPHERAL));
+    gtk_label_set_xalign(GTK_LABEL(ctx->peripheral_section_label), 0.0);
+    gtk_box_pack_start(GTK_BOX(inner), ctx->peripheral_section_label,
+                       FALSE, FALSE, 0);
+
+    ctx->periph_tuning_synced = 0;
+    for (i = 0; i < 3; i++)
+    {
+        GtkWidget *chk = gtk_check_button_new_with_label(
+            _(periph_rows[i].label));
+
+        gtk_label_set_xalign(
+            GTK_LABEL(gtk_bin_get_child(GTK_BIN(chk))), 0.0);
+        ctx->periph_checks[i] = chk;
+        ctx->periph_pending[i] = -1;
+        periph_set_tuning(chk, (int)periph_rows[i].tuning_id);
+        ctx->periph_handlers[i] = g_signal_connect(
+            chk, "toggled", G_CALLBACK(on_periph_toggled), ctx);
+        gtk_widget_set_sensitive(chk, FALSE);
+        gtk_box_pack_start(GTK_BOX(inner), chk, FALSE, FALSE, 0);
+    }
+
+    gtk_container_add(GTK_CONTAINER(scroll), inner);
+    gtk_widget_set_vexpand(scroll, TRUE);
+    gtk_box_pack_start(GTK_BOX(page), scroll, TRUE, TRUE, 0);
+    ctx->features_page = page;
+    return page;
 }
 
 static void build_ui(AppCtx *ctx)
@@ -2104,26 +3276,38 @@ static void build_ui(AppCtx *ctx)
     int i;
     PgTr dev_tab_ids[] = {
         PG_TR_TAB_SYSTEM, PG_TR_TAB_CPU, PG_TR_TAB_COMPAT,
-        PG_TR_TAB_METRICS, PG_TR_TAB_LOG
+        PG_TR_TAB_METRICS, PG_TR_TAB_LOG, PG_TR_TAB_FEATURES
     };
-    GtkWidget *dev_pages[5];
+    GtkWidget *dev_pages[PG_DEV_TAB_COUNT];
 
     ctx->sys_view = NULL;
     ctx->cpu_view = NULL;
     ctx->compat_view = NULL;
     ctx->metrics_view = NULL;
     ctx->log_view = NULL;
+    ctx->features_page = NULL;
+    ctx->tlp_banner = NULL;
     dev_pages[0] = make_scrolled_text(&ctx->sys_view);
     dev_pages[1] = make_scrolled_text(&ctx->cpu_view);
     dev_pages[2] = make_scrolled_text(&ctx->compat_view);
     dev_pages[3] = make_scrolled_text(&ctx->metrics_view);
     dev_pages[4] = make_scrolled_text(&ctx->log_view);
+    dev_pages[5] = make_features_page(ctx);
 
     ctx->window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(ctx->window), "PowerGov");
     gtk_window_set_default_size(GTK_WINDOW(ctx->window), 720, 560);
     apply_window_branding(GTK_WINDOW(ctx->window));
-    g_signal_connect(ctx->window, "destroy", G_CALLBACK(gtk_main_quit), NULL);
+    ctx->window_focused = 1;
+    ctx->main_tab_current = PG_MAIN_TAB_PROFILE;
+    ctx->dev_tab_current = 0;
+    g_signal_connect(ctx->window, "delete-event",
+                     G_CALLBACK(on_window_delete_event), ctx);
+    g_signal_connect(ctx->window, "focus-in-event",
+                     G_CALLBACK(on_window_focus_in), ctx);
+    g_signal_connect(ctx->window, "focus-out-event",
+                     G_CALLBACK(on_window_focus_out), ctx);
+    g_signal_connect(ctx->window, "destroy", G_CALLBACK(on_window_destroy), ctx);
 
     vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_container_set_border_width(GTK_CONTAINER(vbox), 12);
@@ -2185,6 +3369,8 @@ static void build_ui(AppCtx *ctx)
     gtk_box_pack_start(GTK_BOX(vbox), ctx->service_box, FALSE, FALSE, 0);
 
     ctx->main_notebook = gtk_notebook_new();
+    g_signal_connect(ctx->main_notebook, "switch-page",
+                     G_CALLBACK(on_main_tab_switch), ctx);
 
     ctx->mode_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
 
@@ -2209,23 +3395,50 @@ static void build_ui(AppCtx *ctx)
     gtk_box_pack_start(GTK_BOX(ctx->mode_box), ctx->advanced_modes_label,
                        FALSE, FALSE, 0);
 
-    for (i = 1; i < 3; i++)
+    for (i = 1; i < PG_USER_MODE_COUNT; i++)
     {
         GtkWidget *btn = mode_button(ctx, (powergov_user_mode_t)i,
                                      ctx->mode_buttons[0]);
         gtk_box_pack_start(GTK_BOX(ctx->mode_box), btn, FALSE, FALSE, 0);
     }
+    gtk_widget_set_visible(ctx->mode_buttons[POWERGOV_USER_CUSTOM], FALSE);
 
-    bat_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    ctx->battery_switch = gtk_switch_new();
-    ctx->battery_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 5, 95, 5);
-    gtk_range_set_value(GTK_RANGE(ctx->battery_scale), 80);
+    bat_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_style_context_add_class(gtk_widget_get_style_context(bat_box),
+                                "pg-battery-box");
     ctx->battery_label = gtk_label_new(_(PG_TR_LABEL_BATTERY_PROTECT));
+    gtk_label_set_xalign(GTK_LABEL(ctx->battery_label), 0.0);
     gtk_box_pack_start(GTK_BOX(bat_box), ctx->battery_label, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(bat_box), ctx->battery_switch, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(bat_box), ctx->battery_scale, TRUE, TRUE, 0);
+
+    {
+        GtkWidget *bat_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+        ctx->battery_switch = gtk_switch_new();
+        ctx->battery_state_label = gtk_label_new(_(PG_TR_BATTERY_STATE_OFF));
+        gtk_label_set_xalign(GTK_LABEL(ctx->battery_state_label), 0.0);
+        gtk_widget_set_halign(ctx->battery_state_label, GTK_ALIGN_START);
+        gtk_style_context_add_class(
+            gtk_widget_get_style_context(ctx->battery_state_label),
+            "pg-battery-state");
+        gtk_box_pack_start(GTK_BOX(bat_row), ctx->battery_switch, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(bat_row), ctx->battery_state_label,
+                           TRUE, TRUE, 0);
+        gtk_box_pack_start(GTK_BOX(bat_box), bat_row, FALSE, FALSE, 0);
+    }
+
+    ctx->battery_scale = gtk_scale_new_with_range(
+        GTK_ORIENTATION_HORIZONTAL, 5, 95, 5);
+    gtk_range_set_value(GTK_RANGE(ctx->battery_scale), 80);
+    gtk_scale_set_draw_value(GTK_SCALE(ctx->battery_scale), TRUE);
+    gtk_scale_set_value_pos(GTK_SCALE(ctx->battery_scale), GTK_POS_BOTTOM);
+    gtk_widget_set_sensitive(ctx->battery_scale, FALSE);
+    gtk_style_context_add_class(
+        gtk_widget_get_style_context(ctx->battery_scale), "pg-battery-scale");
+    gtk_box_pack_start(GTK_BOX(bat_box), ctx->battery_scale, FALSE, FALSE, 0);
+
     ctx->battery_sw_handler = g_signal_connect(ctx->battery_switch, "state-set",
                                                G_CALLBACK(on_battery_switch), ctx);
+    g_signal_connect(ctx->battery_scale, "value-changed",
+                     G_CALLBACK(on_battery_scale_changed), ctx);
     g_signal_connect(ctx->battery_scale, "button-release-event",
                      G_CALLBACK(on_battery_scale_release), ctx);
 
@@ -2246,7 +3459,9 @@ static void build_ui(AppCtx *ctx)
                              gtk_label_new(_(PG_TR_TAB_PROFILE)));
 
     ctx->dev_notebook = gtk_notebook_new();
-    for (i = 0; i < 5; i++)
+    g_signal_connect(ctx->dev_notebook, "switch-page",
+                     G_CALLBACK(on_dev_tab_switch), ctx);
+    for (i = 0; i < PG_DEV_TAB_COUNT; i++)
     {
         gtk_notebook_append_page(GTK_NOTEBOOK(ctx->dev_notebook), dev_pages[i],
                                  gtk_label_new(_(dev_tab_ids[i])));
@@ -2312,9 +3527,12 @@ static void detach_from_terminal_if_needed(void)
 int main(int argc, char **argv)
 {
     AppCtx ctx;
+    int i;
 
     (void)argv;
     memset(&ctx, 0, sizeof(ctx));
+    for (i = 0; i < 3; i++)
+        ctx.periph_pending[i] = -1;
     detach_from_terminal_if_needed();
     pg_i18n_init();
     gtk_init(&argc, &argv);
@@ -2328,12 +3546,12 @@ int main(int argc, char **argv)
         fprintf(stderr, "powergov-ui: %s\n", lang_log);
     }
     refresh_async(&ctx);
-    ctx.timer_id = g_timeout_add(REFRESH_MS, on_timer, &ctx);
+    setup_tray_icon(&ctx);
     gtk_widget_show_all(ctx.window);
+    refresh_timer_start(&ctx);
     pg_update_check_start(GTK_WINDOW(ctx.window));
     gtk_main();
-    if (ctx.timer_id)
-        g_source_remove(ctx.timer_id);
+    refresh_timer_stop(&ctx);
     if (ctx.feedback_timeout_id)
         g_source_remove(ctx.feedback_timeout_id);
     return 0;

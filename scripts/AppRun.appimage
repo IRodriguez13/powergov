@@ -17,6 +17,14 @@ if [ -n "${APPIMAGE:-}" ] && [ -f "${APPIMAGE}" ] && [ "$(id -u)" -ne 0 ]; then
 fi
 
 UI="${APPDIR}/usr/bin/powergov-ui"
+CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/powergov"
+CANONICAL="${XDG_DATA_HOME:-${HOME}/.local/share}/powergov/PowerGov.AppImage"
+PENDING="${CONFIG_DIR}/appimage-pending"
+
+# Finish in-app update that downloaded while this AppImage was running.
+if [ -f "${PENDING}" ] && [ -f "${CANONICAL}.new" ]; then
+    mv -f "${CANONICAL}.new" "${CANONICAL}" 2>/dev/null && rm -f "${PENDING}" || true
+fi
 
 # Detach from the shell when launched interactively (closing the terminal must not kill the UI).
 # Set POWERGOV_FG=1 to keep attached (debug / see stderr).

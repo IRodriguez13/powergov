@@ -8,6 +8,7 @@ const char *powergov_user_mode_str(powergov_user_mode_t mode)
     case POWERGOV_USER_MAX_BATTERY: return "max-battery";
     case POWERGOV_USER_BALANCED:    return "balanced";
     case POWERGOV_USER_PERFORMANCE: return "performance";
+    case POWERGOV_USER_CUSTOM:      return "custom";
     default:                        return "unknown";
     }
 }
@@ -43,6 +44,8 @@ powergov_user_mode_t powergov_user_mode_parse(const char *s)
         return POWERGOV_USER_BALANCED;
     if (strcmp(s, "performance") == 0 || strcmp(s, "perf") == 0)
         return POWERGOV_USER_PERFORMANCE;
+    if (strcmp(s, "custom") == 0)
+        return POWERGOV_USER_CUSTOM;
     return POWERGOV_USER_MAX_BATTERY;
 }
 
@@ -56,6 +59,7 @@ const char *powergov_feature_name(powergov_feature_id_t id)
     case POWERGOV_FEATURE_TURBO:      return "turbo";
     case POWERGOV_FEATURE_PLATFORM:   return "platform";
     case POWERGOV_FEATURE_RUNTIME_PM: return "runtime_pm";
+    case POWERGOV_FEATURE_PERIPHERAL_PM: return "peripheral_pm";
     default:                          return "unknown";
     }
 }
@@ -73,6 +77,7 @@ void powergov_config_set_defaults(powergov_config_t *cfg)
     cfg->features.cpu_turbo = 1;
     cfg->features.platform_profile = 1;
     cfg->features.runtime_pm = 1;
+    cfg->features.peripheral_pm = 1;
     cfg->log_level = POWERGOV_LOG_INFO;
     cfg->dev_log_enabled = 1;
     cfg->threshold_low = POWERGOV_THRESHOLD_LOW_DEF;
@@ -80,6 +85,11 @@ void powergov_config_set_defaults(powergov_config_t *cfg)
     cfg->threshold_high = POWERGOV_THRESHOLD_HIGH_DEF;
     cfg->freq_cap_battery_pct = POWERGOV_FREQ_CAP_BATTERY_DEF;
     cfg->low_battery_pct = POWERGOV_LOW_BATTERY_DEF;
+    cfg->peripheral.wifi = 1;
+    cfg->peripheral.sata = 1;
+    cfg->peripheral.audio = 1;
+    cfg->custom_allow_performance = 0;
+    cfg->custom_runtime_aggressive = 1;
 }
 
 int powergov_features_to_mask(const powergov_features_t *f)
@@ -93,6 +103,7 @@ int powergov_features_to_mask(const powergov_features_t *f)
     if (f->cpu_turbo)        m |= (1 << POWERGOV_FEATURE_TURBO);
     if (f->platform_profile) m |= (1 << POWERGOV_FEATURE_PLATFORM);
     if (f->runtime_pm)       m |= (1 << POWERGOV_FEATURE_RUNTIME_PM);
+    if (f->peripheral_pm)    m |= (1 << POWERGOV_FEATURE_PERIPHERAL_PM);
     return m;
 }
 
@@ -106,4 +117,5 @@ void powergov_features_from_mask(powergov_features_t *f, int mask)
     f->cpu_turbo = (mask >> POWERGOV_FEATURE_TURBO) & 1;
     f->platform_profile = (mask >> POWERGOV_FEATURE_PLATFORM) & 1;
     f->runtime_pm = (mask >> POWERGOV_FEATURE_RUNTIME_PM) & 1;
+    f->peripheral_pm = (mask >> POWERGOV_FEATURE_PERIPHERAL_PM) & 1;
 }

@@ -22,12 +22,14 @@ static const char *const g_es[PG_TR_COUNT] =
     [PG_TR_TAB_COMPAT] = "Compat",
     [PG_TR_TAB_METRICS] = "Métricas",
     [PG_TR_TAB_LOG] = "Log",
+    [PG_TR_TAB_FEATURES] = "Funciones",
     [PG_TR_BTN_DEV_MODE] = "Modo desarrollador",
     [PG_TR_BTN_USER_MODE] = "Volver a modo usuario",
     [PG_TR_BTN_START_SERVICE] = "Iniciar servicio",
     [PG_TR_BTN_INSTALL_SERVICE] = "Instalar servicio",
     [PG_TR_BTN_STOP] = "Detener",
     [PG_TR_BTN_RESTART] = "Reiniciar",
+    [PG_TR_BTN_RECOVERY_RESTART] = "Reiniciar servicio",
     [PG_TR_LABEL_BATTERY_PROTECT] = "Protección batería (%)",
     [PG_TR_LABEL_PROFILE_HINT] =
         "Seleccione cómo gestionar la energía de su equipo. El modo inteligente "
@@ -38,12 +40,45 @@ static const char *const g_es[PG_TR_COUNT] =
     [PG_TR_DEV_LOCK_BANNER] =
         "El diagnóstico técnico requiere permisos de administrador.\n"
         "Usá el botón «Modo desarrollador» para desbloquearlo.",
+    [PG_TR_TLP_WARN_BANNER] =
+        "TLP está activo: PowerGov no aplica runtime_pm ni peripheral_pm "
+        "para no interferir. CPU, EPP, turbo y platform siguen activos.",
+    [PG_TR_LABEL_FEATURES] =
+        "Subsistemas (se guardan en /etc/powergov.conf)",
+    [PG_TR_LABEL_PERIPHERAL] =
+        "Periféricos (modo personalizado, a demanda)",
+    [PG_TR_LABEL_TUNING] = "Umbrales y ajustes finos",
+    [PG_TR_FEAT_GOVERNOR] = "Governor de CPU",
+    [PG_TR_FEAT_EPP] = "EPP (preferencia energía/rendimiento)",
+    [PG_TR_FEAT_FREQ_CAP] = "Tope de frecuencia",
+    [PG_TR_FEAT_TURBO] = "Turbo boost",
+    [PG_TR_FEAT_PLATFORM] = "Perfil de plataforma (ACPI)",
+    [PG_TR_FEAT_RUNTIME_PM] = "Runtime PM (PCI/USB)",
+    [PG_TR_FEAT_PERIPHERAL_PM] = "PM periféricos (WiFi/SATA/audio)",
+    [PG_TR_FEAT_PERIPH_WIFI] = "Ahorro de energía WiFi",
+    [PG_TR_FEAT_PERIPH_SATA] = "ALPM SATA",
+    [PG_TR_FEAT_PERIPH_AUDIO] = "Ahorro de energía audio",
+    [PG_TR_LOG_FEATURE_OK] = "Feature «%s» %s",
+    [PG_TR_LOG_FEATURE_FAIL] = "No se pudo cambiar «%s»",
+    [PG_TR_ERR_FEATURE_TLP] = "TLP activo: esa capa la gestiona TLP",
+    [PG_TR_LOG_TUNING_OK] = "Ajuste aplicado",
+    [PG_TR_LOG_TUNING_FAIL] = "No se pudo aplicar el ajuste",
     [PG_TR_STATUS_NO_RESPOND] =
         "PowerGov no responde — prueba reiniciar el servicio",
     [PG_TR_STATUS_NOT_RUNNING] = "PowerGov no está en ejecución",
     [PG_TR_STATUS_NOT_INSTALLED] =
         "PowerGov no está instalado en este equipo",
     [PG_TR_STATUS_READ_ERROR] = "Error leyendo estado del daemon",
+    [PG_TR_STATUS_DAEMON_OLD] =
+        "Servicio desactualizado — actualizá para diagnóstico completo",
+    [PG_TR_DAEMON_OLD_TITLE] = "Actualizar servicio PowerGov",
+    [PG_TR_DAEMON_OLD_BODY] =
+        "La interfaz es %s pero el servicio en systemd es %s.\n\n"
+        "Actualizá el servicio para ver logs, compatibilidad, modo a demanda "
+        "y coexistencia con TLP.",
+    [PG_TR_DAEMON_OLD_BTN_LATER] = "Ahora no",
+    [PG_TR_DAEMON_OLD_BTN_UPGRADE] = "Actualizar servicio",
+    [PG_TR_DAEMON_VER_UNKNOWN] = "anterior (API incompatible)",
     [PG_TR_STATUS_ACTIVE_PROFILE] = "Perfil activo: %s",
     [PG_TR_POWER_PLUGGED] = "Enchufado",
     [PG_TR_POWER_BATTERY] = "Batería",
@@ -86,7 +121,7 @@ static const char *const g_es[PG_TR_COUNT] =
     [PG_TR_LOG_DEV_PERM_ERROR] = "Error al solicitar permisos",
     [PG_TR_NO_LOG] = "(sin log)",
     [PG_TR_SYS_FMT] =
-        "SO: %s\nKernel: %s\npowergov: %s\nsystemd: %s\nPPD activo: %s",
+        "SO: %s\nKernel: %s\npowergov: %s\nsystemd: %s\nPPD activo: %s\nTLP activo: %s",
     [PG_TR_CPU_FMT] =
         "Modelo: %s\nCPUs: %d\nDriver: %s\nGovernor: %s\n"
         "Governors: %s\nEPP: %s (%s)\nTurbo: %s\n"
@@ -123,6 +158,10 @@ static const char *const g_es[PG_TR_COUNT] =
         "No se encontraron archivos para instalar el servicio",
     [PG_TR_ERR_INSTALL_FAILED] = "No se pudo instalar el servicio",
     [PG_TR_ERR_INSTALL_DENIED] = "Instalación cancelada o denegada",
+    [PG_TR_FB_INSTALL_VERIFY_WARN] =
+        "Servicio instalado pero no responde — probá Reiniciar servicio",
+    [PG_TR_UPDATE_INSTALL_FAILED] =
+        "No se pudo instalar la actualización — revisá ~/.config/powergov/update-install.log",
     [PG_TR_LOG_INSTALL_STARTED] = "Instalación del servicio solicitada",
     [PG_TR_LOG_INSTALL_OK] = "Servicio PowerGov instalado",
     [PG_TR_FB_INSTALL_OK] = "Servicio instalado y en ejecución",
@@ -157,6 +196,13 @@ static const char *const g_es[PG_TR_COUNT] =
         "Log: ~/.config/powergov/update-install.log",
     [PG_TR_LOG_LANG_AUTO] =
         "Idioma: español (detectado del sistema: %s)",
+    [PG_TR_TRAY_TOOLTIP] = "PowerGov — clic para abrir",
+    [PG_TR_TRAY_SHOW] = "Mostrar PowerGov",
+    [PG_TR_TRAY_QUIT] = "Salir",
+    [PG_TR_DEV_TAB_PLACEHOLDER] =
+        "Seleccioná esta pestaña para cargar datos del daemon.",
+    [PG_TR_BATTERY_STATE_OFF] = "Desactivada",
+    [PG_TR_BATTERY_STATE_ON] = "Activa por debajo del %d%%",
 };
 
 static const char *const g_en[PG_TR_COUNT] =
@@ -169,12 +215,14 @@ static const char *const g_en[PG_TR_COUNT] =
     [PG_TR_TAB_COMPAT] = "Compat",
     [PG_TR_TAB_METRICS] = "Metrics",
     [PG_TR_TAB_LOG] = "Log",
+    [PG_TR_TAB_FEATURES] = "Features",
     [PG_TR_BTN_DEV_MODE] = "Developer mode",
     [PG_TR_BTN_USER_MODE] = "Back to user mode",
     [PG_TR_BTN_START_SERVICE] = "Start service",
     [PG_TR_BTN_INSTALL_SERVICE] = "Install service",
     [PG_TR_BTN_STOP] = "Stop",
     [PG_TR_BTN_RESTART] = "Restart",
+    [PG_TR_BTN_RECOVERY_RESTART] = "Restart service",
     [PG_TR_LABEL_BATTERY_PROTECT] = "Battery protection (%)",
     [PG_TR_LABEL_PROFILE_HINT] =
         "Select how to manage power on your device. Smart mode adjusts "
@@ -185,12 +233,43 @@ static const char *const g_en[PG_TR_COUNT] =
     [PG_TR_DEV_LOCK_BANNER] =
         "Technical diagnostics require administrator privileges.\n"
         "Use the «Developer mode» button to unlock.",
+    [PG_TR_TLP_WARN_BANNER] =
+        "TLP is active: PowerGov skips runtime_pm and peripheral_pm to avoid "
+        "conflicts. CPU, EPP, turbo, and platform remain active.",
+    [PG_TR_LABEL_FEATURES] = "Subsystems (saved to /etc/powergov.conf)",
+    [PG_TR_LABEL_PERIPHERAL] = "Peripherals (custom mode, on demand)",
+    [PG_TR_LABEL_TUNING] = "Thresholds and fine tuning",
+    [PG_TR_FEAT_GOVERNOR] = "CPU governor",
+    [PG_TR_FEAT_EPP] = "EPP (Energy Performance Preference)",
+    [PG_TR_FEAT_FREQ_CAP] = "Frequency cap",
+    [PG_TR_FEAT_TURBO] = "Turbo boost",
+    [PG_TR_FEAT_PLATFORM] = "Platform profile (ACPI)",
+    [PG_TR_FEAT_RUNTIME_PM] = "Runtime PM (PCI/USB)",
+    [PG_TR_FEAT_PERIPHERAL_PM] = "Peripheral PM (WiFi/SATA/audio)",
+    [PG_TR_FEAT_PERIPH_WIFI] = "WiFi power_save",
+    [PG_TR_FEAT_PERIPH_SATA] = "SATA ALPM",
+    [PG_TR_FEAT_PERIPH_AUDIO] = "Audio power_save",
+    [PG_TR_LOG_FEATURE_OK] = "Feature «%s» %s",
+    [PG_TR_LOG_FEATURE_FAIL] = "Could not change «%s»",
+    [PG_TR_ERR_FEATURE_TLP] = "TLP active: that layer is owned by TLP",
+    [PG_TR_LOG_TUNING_OK] = "Tuning applied",
+    [PG_TR_LOG_TUNING_FAIL] = "Could not apply tuning",
     [PG_TR_STATUS_NO_RESPOND] =
         "PowerGov is not responding — try restarting the service",
     [PG_TR_STATUS_NOT_RUNNING] = "PowerGov is not running",
     [PG_TR_STATUS_NOT_INSTALLED] =
         "PowerGov is not installed on this system",
     [PG_TR_STATUS_READ_ERROR] = "Error reading daemon status",
+    [PG_TR_STATUS_DAEMON_OLD] =
+        "Service outdated — upgrade for full diagnostics",
+    [PG_TR_DAEMON_OLD_TITLE] = "Update PowerGov service",
+    [PG_TR_DAEMON_OLD_BODY] =
+        "The UI is %s but the systemd service is %s.\n\n"
+        "Upgrade the service to use logs, compatibility, on-demand mode, "
+        "and TLP coexistence.",
+    [PG_TR_DAEMON_OLD_BTN_LATER] = "Not now",
+    [PG_TR_DAEMON_OLD_BTN_UPGRADE] = "Update service",
+    [PG_TR_DAEMON_VER_UNKNOWN] = "older (incompatible API)",
     [PG_TR_STATUS_ACTIVE_PROFILE] = "Active profile: %s",
     [PG_TR_POWER_PLUGGED] = "Plugged in",
     [PG_TR_POWER_BATTERY] = "Battery",
@@ -231,7 +310,7 @@ static const char *const g_en[PG_TR_COUNT] =
     [PG_TR_LOG_DEV_PERM_ERROR] = "Error requesting permissions",
     [PG_TR_NO_LOG] = "(no log)",
     [PG_TR_SYS_FMT] =
-        "OS: %s\nKernel: %s\npowergov: %s\nsystemd: %s\nPPD active: %s",
+        "OS: %s\nKernel: %s\npowergov: %s\nsystemd: %s\nPPD active: %s\nTLP active: %s",
     [PG_TR_CPU_FMT] =
         "Model: %s\nCPUs: %d\nDriver: %s\nGovernor: %s\n"
         "Governors: %s\nEPP: %s (%s)\nTurbo: %s\n"
@@ -268,6 +347,10 @@ static const char *const g_en[PG_TR_COUNT] =
         "Could not find files to install the service",
     [PG_TR_ERR_INSTALL_FAILED] = "Could not install the service",
     [PG_TR_ERR_INSTALL_DENIED] = "Installation cancelled or denied",
+    [PG_TR_FB_INSTALL_VERIFY_WARN] =
+        "Service installed but not responding — try Restart service",
+    [PG_TR_UPDATE_INSTALL_FAILED] =
+        "Could not install update — see ~/.config/powergov/update-install.log",
     [PG_TR_LOG_INSTALL_STARTED] = "Service installation requested",
     [PG_TR_LOG_INSTALL_OK] = "PowerGov service installed",
     [PG_TR_FB_INSTALL_OK] = "Service installed and running",
@@ -301,6 +384,13 @@ static const char *const g_en[PG_TR_COUNT] =
         "Log: ~/.config/powergov/update-install.log",
     [PG_TR_LOG_LANG_AUTO] =
         "Language: English (detected from system: %s)",
+    [PG_TR_TRAY_TOOLTIP] = "PowerGov — click to open",
+    [PG_TR_TRAY_SHOW] = "Show PowerGov",
+    [PG_TR_TRAY_QUIT] = "Quit",
+    [PG_TR_DEV_TAB_PLACEHOLDER] =
+        "Select this tab to load data from the daemon.",
+    [PG_TR_BATTERY_STATE_OFF] = "Disabled",
+    [PG_TR_BATTERY_STATE_ON] = "Active below %d%%",
 };
 
 static int locale_is_spanish(const char *lang)
@@ -447,6 +537,7 @@ const char *pg_user_mode_title(powergov_user_mode_t mode)
         case POWERGOV_USER_MAX_BATTERY: return "Smart mode";
         case POWERGOV_USER_BALANCED:    return "Balanced";
         case POWERGOV_USER_PERFORMANCE: return "Max performance";
+        case POWERGOV_USER_CUSTOM:      return "Custom";
         default:                        return "Unknown";
         }
     }
@@ -456,6 +547,7 @@ const char *pg_user_mode_title(powergov_user_mode_t mode)
     case POWERGOV_USER_MAX_BATTERY: return "Modo inteligente";
     case POWERGOV_USER_BALANCED:    return "Equilibrado";
     case POWERGOV_USER_PERFORMANCE: return "Máximo rendimiento";
+    case POWERGOV_USER_CUSTOM:      return "Personalizado";
     default:                        return "Desconocido";
     }
 }
@@ -472,6 +564,8 @@ const char *pg_user_mode_subtitle(powergov_user_mode_t mode)
             return "Manual middle ground between battery and speed";
         case POWERGOV_USER_PERFORMANCE:
             return "Manual — prioritize speed even on battery";
+        case POWERGOV_USER_CUSTOM:
+            return "Expert — enable features and thresholds on demand";
         default:
             return "";
         }
@@ -485,6 +579,8 @@ const char *pg_user_mode_subtitle(powergov_user_mode_t mode)
         return "Intermedio manual entre autonomía y velocidad";
     case POWERGOV_USER_PERFORMANCE:
         return "Manual — prioriza velocidad incluso en batería";
+    case POWERGOV_USER_CUSTOM:
+        return "Experto — activá funciones y umbrales a demanda";
     default:
         return "";
     }
@@ -537,6 +633,13 @@ const char *pg_compat_detail_tr(const char *detail_en)
         return "Disponible; el driver puede imponer piso de frecuencia.";
     if (strcmp(detail_en, "PCI/USB; effect depends on each device.") == 0)
         return "PCI/USB; efecto depende de cada dispositivo.";
+    if (strcmp(detail_en,
+               "WiFi (iw), SATA ALPM, audio power_save on battery.") == 0)
+        return "WiFi (iw), ALPM SATA y power_save de audio en batería.";
+    if (strcmp(detail_en, "TLP active; powergov defers runtime_pm to TLP.") == 0)
+        return "TLP activo; powergov delega runtime_pm a TLP.";
+    if (strcmp(detail_en, "TLP active; powergov defers peripheral_pm to TLP.") == 0)
+        return "TLP activo; powergov delega peripheral_pm a TLP.";
     if (strcmp(detail_en, "Sysfs present.") == 0)
         return "Sysfs presente.";
 
@@ -578,4 +681,19 @@ const char *pg_core_dev_text_tr(const char *text_en)
     }
 
     return text_en;
+}
+
+const char *pg_feature_label(powergov_feature_id_t id)
+{
+    switch (id)
+    {
+    case POWERGOV_FEATURE_GOVERNOR:        return pg_tr(PG_TR_FEAT_GOVERNOR);
+    case POWERGOV_FEATURE_EPP:           return pg_tr(PG_TR_FEAT_EPP);
+    case POWERGOV_FEATURE_FREQ_CAP:      return pg_tr(PG_TR_FEAT_FREQ_CAP);
+    case POWERGOV_FEATURE_TURBO:         return pg_tr(PG_TR_FEAT_TURBO);
+    case POWERGOV_FEATURE_PLATFORM:      return pg_tr(PG_TR_FEAT_PLATFORM);
+    case POWERGOV_FEATURE_RUNTIME_PM:    return pg_tr(PG_TR_FEAT_RUNTIME_PM);
+    case POWERGOV_FEATURE_PERIPHERAL_PM: return pg_tr(PG_TR_FEAT_PERIPHERAL_PM);
+    default:                             return "";
+    }
 }

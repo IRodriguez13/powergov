@@ -26,7 +26,8 @@ typedef enum
 {
     POWERGOV_USER_MAX_BATTERY = 0,
     POWERGOV_USER_BALANCED    = 1,
-    POWERGOV_USER_PERFORMANCE = 2
+    POWERGOV_USER_PERFORMANCE = 2,
+    POWERGOV_USER_CUSTOM      = 3
 } powergov_user_mode_t;
 
 typedef enum
@@ -60,7 +61,15 @@ typedef struct
     unsigned cpu_turbo       : 1;
     unsigned platform_profile : 1;
     unsigned runtime_pm      : 1;
+    unsigned peripheral_pm   : 1;
 } powergov_features_t;
+
+typedef struct
+{
+    unsigned wifi  : 1;
+    unsigned sata  : 1;
+    unsigned audio : 1;
+} powergov_peripheral_opts_t;
 
 typedef struct
 {
@@ -75,6 +84,9 @@ typedef struct
     double threshold_high;
     int freq_cap_battery_pct;
     int low_battery_pct;
+    powergov_peripheral_opts_t peripheral;
+    int custom_allow_performance;
+    int custom_runtime_aggressive;
 } powergov_config_t;
 
 typedef enum
@@ -90,8 +102,24 @@ typedef enum
     POWERGOV_SOCKET_CMD_QUERY_COMPAT          = 9,
     POWERGOV_SOCKET_CMD_QUERY_METRICS          = 10,
     POWERGOV_SOCKET_CMD_QUERY_LOG             = 11,
-    POWERGOV_SOCKET_CMD_QUERY_BUNDLE          = 12
+    POWERGOV_SOCKET_CMD_QUERY_BUNDLE          = 12,
+    POWERGOV_SOCKET_CMD_SET_TUNING            = 13,
+    POWERGOV_SOCKET_CMD_QUERY_TUNING          = 14
 } powergov_socket_cmd_t;
+
+typedef enum
+{
+    POWERGOV_TUNING_THRESHOLD_LOW = 0,
+    POWERGOV_TUNING_THRESHOLD_MID,
+    POWERGOV_TUNING_THRESHOLD_HIGH,
+    POWERGOV_TUNING_FREQ_CAP_BATTERY,
+    POWERGOV_TUNING_LOW_BATTERY,
+    POWERGOV_TUNING_PERIPHERAL_WIFI,
+    POWERGOV_TUNING_PERIPHERAL_SATA,
+    POWERGOV_TUNING_PERIPHERAL_AUDIO,
+    POWERGOV_TUNING_CUSTOM_ALLOW_PERF,
+    POWERGOV_TUNING_CUSTOM_RUNTIME_PM
+} powergov_tuning_id_t;
 
 typedef enum
 {
@@ -101,6 +129,7 @@ typedef enum
     POWERGOV_FEATURE_TURBO,
     POWERGOV_FEATURE_PLATFORM,
     POWERGOV_FEATURE_RUNTIME_PM,
+    POWERGOV_FEATURE_PERIPHERAL_PM,
     POWERGOV_FEATURE_COUNT
 } powergov_feature_id_t;
 
@@ -123,12 +152,27 @@ typedef struct
 
 typedef struct
 {
+    int threshold_low_pct;
+    int threshold_mid_pct;
+    int threshold_high_pct;
+    int freq_cap_battery_pct;
+    int low_battery_pct;
+    int peripheral_wifi;
+    int peripheral_sata;
+    int peripheral_audio;
+    int custom_allow_performance;
+    int custom_runtime_aggressive;
+} powergov_reply_tuning_t;
+
+typedef struct
+{
     const char *governor;
     const char *epp;
     int turbo_on;
     int freq_cap_pct;
     const char *platform_profile;
     int runtime_pm_aggressive;
+    int peripheral_pm_level;
     int allow_performance;
 } powergov_effective_policy_t;
 

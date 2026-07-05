@@ -23,7 +23,9 @@ SRC = main.c \
       power/power_supply.c \
       power/profile.c \
       platform/platform_profile.c \
+      platform/tlp_compat.c \
       devices/runtime_pm.c \
+      devices/peripheral_pm.c \
       log/log.c \
       metrics/metrics.c \
       config/config.c
@@ -58,7 +60,7 @@ ICON_ROOT = /usr/share/icons/hicolor
 DESKTOP_FILE = data/powergov-ui.desktop
 DESKTOP_DIR = /usr/share/applications
 PACK_DIRS = VERSION Makefile README.md main.c src include core cpu power platform devices log metrics config client data Documentation completions doc service scripts .gitignore
-PACK_UI = ui/main.c ui/i18n.c ui/i18n.h ui/update_check.c ui/update_check.h ui/README.md
+PACK_UI = ui/main.c ui/i18n.c ui/i18n.h ui/update_check.c ui/update_check.h ui/daemon_upgrade.c ui/daemon_upgrade.h ui/README.md
 
 LIB_OBJ = client/libpowergov.o include/powergov/types_lib.o
 
@@ -76,9 +78,10 @@ $(LIBPOWERGOV): $(LIB_OBJ)
 client/%.o: client/%.c
 	$(CC) $(CFLAGS) -fPIC -c $< -o $@
 
-$(UI_BIN): ui/main.c ui/i18n.c ui/update_check.c $(LIBPOWERGOV)
+$(UI_BIN): ui/main.c ui/i18n.c ui/update_check.c ui/daemon_upgrade.c $(LIBPOWERGOV)
 	@test -n "$(GTK_LIBS)" || (echo "gtk+-3.0 no encontrado (pkg-config)" && exit 1)
 	$(CC) $(CFLAGS) $(GTK_CFLAGS) -o $(UI_BIN) ui/main.c ui/i18n.c ui/update_check.c \
+		ui/daemon_upgrade.c src/version.c \
 		-L. -lpowergov -Wl,-rpath,'$$ORIGIN' $(GTK_LIBS)
 
 install: install-bin install-man install-completion install-lib install-ui-policy
@@ -125,13 +128,8 @@ install-ui-desktop:
 install-ui-helper:
 	install -D -m 755 $(DEV_AUTH) $(LIBEXEC_DIR)/dev-auth
 	install -D -m 755 $(INSTALL_HELPER) $(LIBEXEC_DIR)/install-service-resident.sh
-	@$(MAKE) staging
-	install -D -m 755 $(STAGING_DIR)/powergov $(LIBEXEC_DIR)/staging/powergov
-	install -D -m 755 $(STAGING_DIR)/libpowergov.so $(LIBEXEC_DIR)/staging/libpowergov.so
-	install -D -m 644 $(STAGING_DIR)/powergov.conf $(LIBEXEC_DIR)/staging/powergov.conf
-	install -D -m 644 $(STAGING_DIR)/powergov.service $(LIBEXEC_DIR)/staging/powergov.service
-	install -D -m 644 $(STAGING_DIR)/org.powergov.policy $(LIBEXEC_DIR)/staging/org.powergov.policy
-	install -D -m 755 $(STAGING_DIR)/dev-auth $(LIBEXEC_DIR)/staging/dev-auth
+	@chmod +x scripts/prepare-install-staging.sh
+	@./scripts/prepare-install-staging.sh $(LIBEXEC_DIR)/staging
 
 install-ui-policy:
 	install -D -m 644 $(POLKIT_POLICY) $(POLKIT_DIR)/org.powergov.policy

@@ -37,7 +37,11 @@ install -D -m 755 "${STAGING}/powergov-uninstall.sh" \
     "${LIBEXEC}/powergov-uninstall.sh"
 install -D -m 755 "${STAGING}/remove-appimage-user-files.sh" \
     "${LIBEXEC}/remove-appimage-user-files.sh"
-install -D -m 755 "$(readlink -f "$0")" "${LIBEXEC}/install-service-resident.sh"
+
+SELF="$(readlink -f "$0")"
+if [[ "${SELF}" != "${LIBEXEC}/install-service-resident.sh" ]]; then
+    install -D -m 755 "${SELF}" "${LIBEXEC}/install-service-resident.sh"
+fi
 
 mkdir -p "${LIBEXEC}/staging"
 cp -a "${STAGING}/." "${LIBEXEC}/staging/"

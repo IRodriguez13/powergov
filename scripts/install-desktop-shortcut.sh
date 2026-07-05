@@ -2,6 +2,10 @@
 # Install a desktop shortcut for the current user (do not run as root).
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=powergov-xdg-paths.sh
+. "${SCRIPT_DIR}/powergov-xdg-paths.sh"
+
 SOURCE="${1:-/usr/share/applications/powergov-ui.desktop}"
 
 if [[ "${EUID}" -eq 0 ]]; then
@@ -16,51 +20,16 @@ if [[ ! -f "${SOURCE}" ]]; then
     exit 1
 fi
 
-canonical_dir() {
-    local d=$1
-    if [[ -d "${d}" ]] && command -v realpath >/dev/null 2>&1; then
-        realpath "${d}"
-    else
-        printf '%s' "${d}"
-    fi
-}
-
 resolve_desktop_dirs() {
-    local -a candidates=()
-    local primary="" d canon
-
-    if command -v xdg-user-dir >/dev/null 2>&1; then
-        primary="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
-        [[ -n "${primary}" ]] && candidates+=("${primary}")
-    fi
-
-    if [[ -n "${XDG_DESKTOP_DIR:-}" ]]; then
-        candidates+=("${XDG_DESKTOP_DIR}")
-    fi
-    candidates+=("${HOME}/Desktop" "${HOME}/Escritorio")
-
-    declare -A seen_dirs=()
     local -a existing=()
+    local d
 
-    for d in "${candidates[@]}"; do
-        [[ -z "${d}" || "${d}" == "/" ]] && continue
-        canon="$(canonical_dir "${d}")"
-        [[ -n "${canon}" && -z "${seen_dirs[${canon}]+x}" ]] || continue
-        seen_dirs["${canon}"]=1
-        if [[ -d "${d}" ]]; then
-            existing+=("${d}")
-        fi
-    done
+    while IFS= read -r d; do
+        [[ -n "${d}" ]] && existing+=("${d}")
+    done < <(pg_desktop_dirs)
 
     if [[ ${#existing[@]} -eq 0 ]]; then
-        if [[ -z "${primary}" ]] && command -v xdg-user-dir >/dev/null 2>&1; then
-            primary="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
-        fi
-        if [[ -z "${primary}" ]]; then
-            primary="${XDG_DESKTOP_DIR:-${HOME}/Desktop}"
-        fi
-        mkdir -p "${primary}"
-        existing=("${primary}")
+        d="$(pg_default_desktop_dir)" && existing=("${d}")
     fi
 
     printf '%s\n' "${existing[@]}"

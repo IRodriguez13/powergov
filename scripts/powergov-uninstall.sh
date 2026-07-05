@@ -30,9 +30,21 @@ cleanup_user_scope() {
         return 0
     fi
 
+    # Fallback when helper script missing: XDG paths only (no hardcoded locale names).
+    local xdg_script="${SCRIPT_DIR}/powergov-xdg-paths.sh"
+    if [[ -f "${xdg_script}" ]]; then
+        # shellcheck source=powergov-xdg-paths.sh
+        . "${xdg_script}"
+        rm -f "${home}/.local/share/applications/powergov-ui.desktop" \
+            "${home}/.config/powergov/appimage-desktop" 2>/dev/null || true
+        while IFS= read -r d; do
+            [[ -n "${d}" ]] || continue
+            rm -f "${d}/powergov-ui.desktop" 2>/dev/null || true
+        done < <(HOME="${home}" pg_desktop_dirs)
+        return 0
+    fi
+
     rm -f "${home}/.local/share/applications/powergov-ui.desktop" \
-        "${home}/Desktop/powergov-ui.desktop" \
-        "${home}/Escritorio/powergov-ui.desktop" \
         "${home}/.config/powergov/appimage-desktop" 2>/dev/null || true
 }
 

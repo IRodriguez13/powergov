@@ -2,42 +2,13 @@
 # Remove user-scope AppImage shortcuts (menu, desktop, icons, marker). No root.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=powergov-xdg-paths.sh
+. "${SCRIPT_DIR}/powergov-xdg-paths.sh"
+
 if [[ "${EUID}" -eq 0 ]]; then
     exit 0
 fi
-
-canonical_dir() {
-    local d=$1
-    if [[ -d "${d}" ]] && command -v realpath >/dev/null 2>&1; then
-        realpath "${d}"
-    else
-        printf '%s' "${d}"
-    fi
-}
-
-resolve_desktop_dirs() {
-    local -a candidates=()
-    local primary="" d canon
-
-    if command -v xdg-user-dir >/dev/null 2>&1; then
-        primary="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
-        [[ -n "${primary}" ]] && candidates+=("${primary}")
-    fi
-
-    if [[ -n "${XDG_DESKTOP_DIR:-}" ]]; then
-        candidates+=("${XDG_DESKTOP_DIR}")
-    fi
-    candidates+=("${HOME}/Desktop" "${HOME}/Escritorio")
-
-    declare -A seen_dirs=()
-    for d in "${candidates[@]}"; do
-        [[ -z "${d}" || "${d}" == "/" ]] && continue
-        canon="$(canonical_dir "${d}")"
-        [[ -n "${canon}" && -z "${seen_dirs[${canon}]+x}" ]] || continue
-        seen_dirs["${canon}"]=1
-        [[ -d "${d}" ]] && printf '%s\n' "${d}"
-    done
-}
 
 DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 APPL_DIR="${DATA_HOME}/applications"
@@ -50,7 +21,7 @@ rm -f "${CONFIG_DIR}/appimage-desktop"
 while IFS= read -r desktop_dir; do
     [[ -n "${desktop_dir}" ]] || continue
     rm -f "${desktop_dir}/powergov-ui.desktop"
-done < <(resolve_desktop_dirs)
+done < <(pg_desktop_dirs)
 
 shopt -s nullglob
 for icon in "${ICON_ROOT}"/*/apps/powergov.png; do

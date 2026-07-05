@@ -1,7 +1,7 @@
 # powergov — Documentación
 
-> **Última verificación:** 2026-07-04  
-> **Fuente de verdad:** `include/powergov/types.h`, `core/loop.c`, `config/config.c`, `main.c`, `doc/powergov.1`, `doc/powergov.8`
+> **Última verificación:** 2026-07-05  
+> **Fuente de verdad:** `include/powergov/types.h`, `core/loop.c`, `config/config.c`, `devices/peripheral_pm.c`, `platform/tlp_compat.c`, `doc/powergov.1`, `doc/powergov.8`
 
 Índice de documentación operativa y de diseño del daemon **powergov** (gestor modular de energía para portátiles Linux, userspace + sysfs).
 
@@ -10,26 +10,27 @@
 | Documento | Contenido |
 |-----------|-----------|
 | [arquitectura.md](arquitectura.md) | Módulos, flujo del daemon, máquina de estados, determinismo |
-| [configuracion.md](configuracion.md) | `/etc/powergov.conf`, modos de usuario, features, CLI |
-| [operacion.md](operacion.md) | Build, install, systemd, socket en caliente |
-| [modulos-sysfs.md](modulos-sysfs.md) | Subsistemas (CPU, plataforma, runtime PM) e interfaces kernel |
+| [configuracion.md](configuracion.md) | `/etc/powergov.conf`, modos de usuario, features, periféricos, CLI |
+| [operacion.md](operacion.md) | Build, install, systemd, socket en caliente, TLP/ppd |
+| [modulos-sysfs.md](modulos-sysfs.md) | Subsistemas (CPU, plataforma, runtime PM, peripheral PM) |
 | [metricas-logging-dev.md](metricas-logging-dev.md) | Métricas apply/verify, RAPL, `dev-log`, `dev-metrics` |
 | [impacto-bateria-teorico.md](impacto-bateria-teorico.md) | Análisis estático de autonomía esperada |
-| [../ui/README.md](../ui/README.md) | UI desktop (usuario + modo Dev) |
+| [../ui/README.md](../ui/README.md) | UI GTK (usuario + modo Dev + bandeja) |
+| [../README.md](../README.md) | Visión general del proyecto (inglés) |
 
 ## Referencia rápida
 
 ```bash
 sudo make install-service          # binario + unit + conf
 sudo powergov mode max-battery     # máxima protección (default)
-sudo powergov status
-sudo powergov feature turbo off    # desactivar un subsistema
+powergov status
+sudo powergov feature peripheral_pm off   # desactivar ahorro periféricos
 powergov dev-metrics               # contadores (desarrollo)
 sudo powergov dev-log -f           # log en vivo
 
-# UI web local
-make ui                            # navegador
-make ui-desktop                    # ventana desktop (pywebview)
+# UI GTK
+make powergov-ui && ./powergov-ui
+make appimage                      # release AppImage
 ```
 
 ## Mandocs
@@ -37,9 +38,12 @@ make ui-desktop                    # ventana desktop (pywebview)
 - Usuario: `doc/powergov.1` → `man powergov`
 - Servicio: `doc/powergov.8` → `man 8 powergov`
 
-## Fuera de alcance (v1.7.x)
+Tras `sudo make install`, las páginas quedan en `/usr/local/share/man/man1` y `man8`.
+
+## Fuera de alcance (v1.10)
 
 - Backlight / brillo de pantalla
-- WiFi power save (`iw`/nl80211)
 - GPU discreta (NVIDIA Optimus, etc.)
-- UI gráfica (planeada a futuro)
+- Wayland compositor / gestión de ventanas
+
+**Incluido desde v1.10:** WiFi power save (`iw`), SATA `libata` link power, audio codec `power_save` — vía feature `peripheral_pm` y modo **custom** (UI: periféricos **a demanda**).

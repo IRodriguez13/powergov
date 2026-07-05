@@ -41,7 +41,8 @@ make -s libpowergov.so powergov-ui
 STAGING="${ROOT}/.staging/appimage"
 chmod +x scripts/prepare-install-staging.sh scripts/install-service-resident.sh \
     scripts/install-appimage-desktop.sh scripts/powergov-uninstall.sh \
-    scripts/remove-appimage-user-files.sh scripts/install-appimage-update.sh
+    scripts/remove-appimage-user-files.sh scripts/install-appimage-update.sh \
+    scripts/powergov-xdg-paths.sh
 ./scripts/prepare-install-staging.sh "${STAGING}"
 
 echo "==> fetch linuxdeploy (cached in .build/appimage/)"
@@ -72,11 +73,14 @@ cp "${ROOT}/scripts/remove-appimage-user-files.sh" \
     "${APPDIR}/usr/libexec/powergov/remove-appimage-user-files.sh"
 cp "${ROOT}/scripts/install-appimage-update.sh" \
     "${APPDIR}/usr/libexec/powergov/install-appimage-update.sh"
+cp "${ROOT}/scripts/powergov-xdg-paths.sh" \
+    "${APPDIR}/usr/libexec/powergov/powergov-xdg-paths.sh"
 chmod +x "${APPDIR}/usr/libexec/powergov/install-service-resident.sh" \
     "${APPDIR}/usr/libexec/powergov/install-appimage-desktop.sh" \
     "${APPDIR}/usr/libexec/powergov/powergov-uninstall.sh" \
     "${APPDIR}/usr/libexec/powergov/remove-appimage-user-files.sh" \
-    "${APPDIR}/usr/libexec/powergov/install-appimage-update.sh"
+    "${APPDIR}/usr/libexec/powergov/install-appimage-update.sh" \
+    "${APPDIR}/usr/libexec/powergov/powergov-xdg-paths.sh"
 
 cat > "${DESKTOP}" <<EOF
 [Desktop Entry]

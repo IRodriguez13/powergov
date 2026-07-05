@@ -35,17 +35,31 @@ NOTES="$(cat <<EOF
 
 1. Descargá \`PowerGov-${VERSION}-x86_64.AppImage\`
 2. \`chmod +x PowerGov-${VERSION}-x86_64.AppImage && ./PowerGov-${VERSION}-x86_64.AppImage\`
-3. En el **primer arranque**, se crea acceso en el menú de aplicaciones y en el escritorio (Escritorio o Desktop según tu sistema).
+3. En el **primer arranque**, se crea acceso en el menú y en el escritorio (\`\$XDG_DESKTOP_DIR\`).
 4. La UI detecta el idioma del sistema (es → español; resto → inglés) y pregunta si instalar el servicio en segundo plano.
-5. Si aceptás, se pide contraseña de administrador **una vez** y queda todo el backend (systemd + daemon) listo.
-6. Si no aceptás, cualquier acción que requiera el servicio vuelve a preguntar.
-7. **Desinstalar:** botón al pie de la ventana (servicio instalado) → confirmación → contraseña de admin.
+5. Si aceptás, se pide contraseña de administrador **una vez** y queda el backend (systemd + daemon) listo.
+6. **Desinstalar:** botón al pie de la ventana → confirmación → contraseña de admin.
 
 **No hace falta compilar nada** para usar el AppImage.
 
 ### Cambios en ${VERSION}
 
-- **Actualización sin duplicados:** el AppImage se instala siempre en \`~/.local/share/powergov/PowerGov.AppImage\` (sobrescribe) y se eliminan copias versionadas antiguas en Descargas.
+#### Daemon y política
+- Feature **peripheral_pm**: ahorro WiFi (\`iw power_save\`), SATA link power y audio codec (\`power_save\`) en modo **custom**, a demanda.
+- Modo usuario **custom** con flags \`CUSTOM_ALLOW_PERFORMANCE\`, \`CUSTOM_RUNTIME_AGGRESSIVE\` y \`PERIPHERAL_*\` en \`/etc/powergov.conf\`.
+- Detección **TLP**: si TLP está activo, powergov no aplica \`runtime_pm\` ni \`peripheral_pm\`.
+- Socket: comandos \`SET_TUNING\` / \`QUERY_TUNING\` para umbrales y periféricos.
+- Reserva batería por defecto **15 %** (\`LOW_BATTERY\`).
+
+#### UI GTK
+- Modo Dev: pestaña Características traducible; periféricos **a demanda** (sync inicial antes de editar).
+- Bandeja del sistema (icono rayo); cerrar con X oculta la ventana (\`POWERGOV_NO_TRAY=1\` para salir).
+- Refresco adaptativo (~8 s con foco), carga perezosa en pestañas Dev, check de actualización al arrancar.
+- Fix métricas/log sin falso «daemon no está en ejecución»; upgrade daemon cuando el API es más nuevo.
+- Rutas **XDG** para escritorio/descargas (\`scripts/powergov-xdg-paths.sh\`).
+
+#### Empaquetado
+- AppImage: instalación estable en \`~/.local/share/powergov/PowerGov.AppImage\` (sin duplicados versionados en Descargas).
 
 ### Instalación desde código fuente (tarball)
 
@@ -57,10 +71,15 @@ cd powergov-${VERSION}
 
 Requiere: \`build-essential pkg-config libgtk-3-dev zenity\`.
 
+### Documentación
+
+- README y \`Documentation/\` actualizados.
+- \`man powergov\` / \`man 8 powergov\` — peripheral_pm, custom, TLP.
+
 ### Notas
 
-- UI GTK con idioma automático (LANG/LC_MESSAGES del sistema) + botón EN/ES.
-- \`make appimage\` es solo para quien publica releases (tarda ~2 min); los usuarios descargan el binario ya empaquetado.
+- UI GTK con idioma automático (LANG/LC_MESSAGES) + botón EN/ES.
+- \`make appimage\` es para quien publica releases (~2 min); los usuarios descargan el binario empaquetado.
 EOF
 )"
 

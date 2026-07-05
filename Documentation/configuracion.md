@@ -1,6 +1,6 @@
 # Configuración
 
-> **Última verificación:** 2026-07-04  
+> **Última verificación:** 2026-07-05  
 > **Fuente de verdad:** `config/config.c`, `config/powergov.conf`, `main.c`, `include/powergov/types.h`
 
 ## Archivo persistente
@@ -20,7 +20,12 @@ Plantilla en repo: `config/powergov.conf`.
 | `THRESHOLD_MID` | 0.0–1.0 | 0.60 | Salida de PERFORMANCE |
 | `THRESHOLD_HIGH` | 0.0–1.0 | 0.75 | Entrada a PERFORMANCE |
 | `FREQ_CAP_BATTERY` | 50–100 | 80 | % de cpuinfo_max_freq en batería |
-| `LOW_BATTERY` | 5–50 | 20 | SOC % para perfil de supervivencia (cap 60%) |
+| `LOW_BATTERY` | 5–50 | 15 | SOC % para perfil de supervivencia (cap 60%) |
+| `PERIPHERAL_WIFI` | 0, 1 | 1 | Ahorro WiFi (`iw set power_save`) en modo custom |
+| `PERIPHERAL_SATA` | 0, 1 | 1 | Link power management en dispositivos SATA |
+| `PERIPHERAL_AUDIO` | 0, 1 | 1 | `power_save` en codecs HDA |
+| `CUSTOM_ALLOW_PERFORMANCE` | 0, 1 | 0 | Modo custom: permitir governor performance en batería |
+| `CUSTOM_RUNTIME_AGGRESSIVE` | 0, 1 | 1 | Modo custom: runtime PM agresivo |
 
 ### Features válidas en `FEATURES`
 
@@ -32,6 +37,7 @@ Plantilla en repo: `config/powergov.conf`.
 | `turbo` | boost / no_turbo | `cpu/turbo.c` |
 | `platform` | ACPI platform_profile | `platform/platform_profile.c` |
 | `runtime_pm` | PCI/USB auto suspend | `devices/runtime_pm.c` |
+| `peripheral_pm` | WiFi / SATA / audio on demand | `devices/peripheral_pm.c` |
 
 ## Modos de usuario (`USER_MODE`)
 
@@ -40,8 +46,15 @@ Plantilla en repo: `config/powergov.conf`.
 | **max-battery** | Máxima protección: sin performance, turbo off, EPP bajo, cap freq, runtime PM, platform low-power |
 | **balanced** | Ahorro moderado; cap freq; performance bloqueado salvo override battery-safe |
 | **performance** | Permite governor performance y turbo en batería (decisión explícita del usuario) |
+| **custom** | Política definida por flags `CUSTOM_*` y `PERIPHERAL_*`; expuesto en UI Dev → Características |
 
 Default del proyecto: **`max-battery`** — proteger autonomía salvo que el usuario elija lo contrario.
+
+### Periféricos (modo custom, a demanda)
+
+Con `USER_MODE=custom` y `peripheral_pm` en `FEATURES`, el daemon aplica ahorro por dispositivo según `PERIPHERAL_WIFI`, `PERIPHERAL_SATA`, `PERIPHERAL_AUDIO`. La UI GTK expone tres checkboxes (sincronizados con el daemon tras la primera lectura de tuning).
+
+Si **TLP** está activo, `runtime_pm` y `peripheral_pm` no se aplican (detección en `platform/tlp_compat.c`).
 
 ## CLI
 

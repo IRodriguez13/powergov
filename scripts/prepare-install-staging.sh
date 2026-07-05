@@ -19,3 +19,5 @@ install -m 755 "$ROOT/scripts/powergov-dev-auth" "$OUT/dev-auth"
 install -m 755 "$ROOT/scripts/powergov-uninstall.sh" "$OUT/powergov-uninstall.sh"
 install -m 755 "$ROOT/scripts/remove-appimage-user-files.sh" \
     "$OUT/remove-appimage-user-files.sh"
+install -m 755 "$ROOT/scripts/powergov-xdg-paths.sh" \
+    "$OUT/powergov-xdg-paths.sh"

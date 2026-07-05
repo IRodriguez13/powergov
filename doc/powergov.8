@@ -1,4 +1,4 @@
-.TH POWERGOV 8 "July 2026" "powergov" "System Administration"
+.TH POWERGOV 8 "July 2026" "powergov 1.10.0" "System Administration"
 .SH NAME
 powergov \- systemd service for modular laptop power management
 .SH SYNOPSIS
@@ -22,17 +22,21 @@ On start, configuration is loaded from
 Runtime changes via
 .BR "powergov mode" ,
 .BR "powergov feature" ,
-or
+the GTK UI, or
 .B powergov \-\-battery-safe
 are persisted to that file when handled by the running daemon.
 .PP
-On graceful shutdown (SIGTERM), the daemon restores CPU frequency caps and
-PCI/USB runtime PM settings it modified.
+On graceful shutdown (SIGTERM), the daemon restores CPU frequency caps,
+PCI/USB runtime PM settings, and peripheral PM state it modified.
 .SH INSTALLATION
 .TP
 .B sudo make install-service
 Installs the binary, configuration template, systemd unit, shell completions,
 and manual pages. Enables and starts the service.
+.PP
+For desktop users, the
+.B PowerGov AppImage
+can install the same backend after a one-time administrator password prompt.
 .SH UNIT FILE
 Installed as
 .IR /etc/systemd/system/powergov.service .
@@ -60,6 +64,30 @@ Restarts the daemon if it exits unexpectedly.
 .TP
 .B WantedBy=multi-user.target
 Starts on multi-user boot target.
+.SH SUBSYSTEMS
+The service may manage, depending on
+.IR /etc/powergov.conf
+features and user mode:
+.TP
+.B CPU
+Governor, EPP, frequency cap, turbo boost.
+.TP
+.B Platform
+ACPI
+.I platform_profile
+when power-profiles-daemon is not active.
+.TP
+.B runtime_pm
+PCI and USB
+.I power/control
+(auto suspend).
+.TP
+.B peripheral_pm
+WiFi power save
+.RB ( iw ),
+SATA link power management, audio codec power_save — only in
+.B custom
+user mode and when not deferred to TLP (see below).
 .SH INTERACTION WITH OTHER TOOLS
 If
 .B power-profiles-daemon
@@ -68,10 +96,20 @@ platform_profile
 control to avoid conflicting writes. CPU, EPP, turbo, and runtime PM features
 remain active unless disabled via configuration.
 .PP
-Third-party tools such as TLP or
+If
+.B TLP
+(service, runtime directory, or active
+.BR tlp (8)
+stack) is detected, powergov skips
+.B runtime_pm
+and
+.B peripheral_pm
+application to avoid duplicate device policy. CPU and platform features may
+still run; configure a single primary tool for overlapping sysfs nodes.
+.PP
+Third-party tools such as
 .BR cpupower (1)
-may overlap with the same sysfs nodes; configure only one primary owner for
-CPU power policy.
+may overlap with governor and turbo control; use only one primary owner.
 .SH SERVICE MANAGEMENT
 .TP
 .B systemctl start powergov
@@ -106,7 +144,9 @@ Daemon pidfile.
 .TP
 .I /run/powergov/powergov.sock
 Control socket for
-.BR powergov (1).
+.BR powergov (1)
+and
+.BR powergov-ui .
 .TP
 .I /run/powergov/metrics
 Developer metrics snapshot.
@@ -117,6 +157,7 @@ Developer log (when enabled).
 .BR powergov (1),
 .BR systemd.service (5),
 .BR systemd.unit (5),
+.BR tlp (8),
 project documentation in
 .IR Documentation/README.md .
 .SH AUTHOR

@@ -5,6 +5,8 @@
 #include "../cpu/turbo.h"
 #include "../power/power_supply.h"
 #include "../platform/platform_profile.h"
+#include "../platform/tlp_compat.h"
+#include "../devices/peripheral_pm.h"
 #include "../core/sysfs.h"
 #include "../include/version.h"
 #include <stdio.h>
@@ -161,6 +163,7 @@ void powergov_info_fill_system(powergov_reply_system_t *out)
     /* Answering on the socket implies systemd started us. */
     out->systemd_active = 1;
     out->ppd_detected = platform_ppd_active();
+    out->tlp_detected = tlp_active();
 }
 
 void powergov_info_fill_cpu(powergov_reply_cpu_t *out)
@@ -231,6 +234,8 @@ static int feature_hw(int id)
         return platform_profile_available();
     case POWERGOV_FEATURE_RUNTIME_PM:
         return sysfs_path_exists("/sys/bus/pci/devices");
+    case POWERGOV_FEATURE_PERIPHERAL_PM:
+        return peripheral_pm_available();
     default:
         return 0;
     }
@@ -270,6 +275,16 @@ void powergov_info_fill_compat(const powergov_config_t *cfg,
             st = POWERGOV_COMPAT_CONFLICT;
             detail = "power-profiles-daemon active; powergov skips platform_profile.";
         }
+        else if (i == POWERGOV_FEATURE_RUNTIME_PM && tlp_active())
+        {
+            st = POWERGOV_COMPAT_CONFLICT;
+            detail = "TLP active; powergov defers runtime_pm to TLP.";
+        }
+        else if (i == POWERGOV_FEATURE_PERIPHERAL_PM && tlp_active())
+        {
+            st = POWERGOV_COMPAT_CONFLICT;
+            detail = "TLP active; powergov defers peripheral_pm to TLP.";
+        }
         else if (i == POWERGOV_FEATURE_FREQ_CAP && hw)
         {
             st = POWERGOV_COMPAT_PARTIAL;
@@ -280,6 +295,12 @@ void powergov_info_fill_compat(const powergov_config_t *cfg,
         {
             st = POWERGOV_COMPAT_PARTIAL;
             detail = "PCI/USB; effect depends on each device.";
+            partial++;
+        }
+        else if (i == POWERGOV_FEATURE_PERIPHERAL_PM && hw)
+        {
+            st = POWERGOV_COMPAT_PARTIAL;
+            detail = "WiFi (iw), SATA ALPM, audio power_save on battery.";
             partial++;
         }
         else if (hw)

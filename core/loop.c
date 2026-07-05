@@ -5,7 +5,9 @@
 #include "../cpu/cpu_load.h"
 #include "../cpu/policy.h"
 #include "../platform/platform_profile.h"
+#include "../platform/tlp_compat.h"
 #include "../devices/runtime_pm.h"
+#include "../devices/peripheral_pm.h"
 #include "../log/log.h"
 #include "../metrics/metrics.h"
 #include "../cpu/governor.h"
@@ -67,15 +69,104 @@ int setup_socket_server(void)
 static void apply_full_policy(const powergov_config_t *cfg,
                               const powergov_effective_policy_t *policy)
 {
+    int tlp = tlp_active();
+
     cpu_policy_apply(cfg, policy);
 
     if (cfg->features.platform_profile && policy->platform_profile)
         platform_profile_apply(policy->platform_profile);
 
-    if (cfg->features.runtime_pm)
+    if (cfg->features.runtime_pm && !tlp)
         runtime_pm_apply_aggressive(policy->runtime_pm_aggressive);
     else
         runtime_pm_restore();
+
+    if (cfg->features.peripheral_pm && !tlp)
+        peripheral_pm_apply_cfg(policy->peripheral_pm_level, &cfg->peripheral);
+    else
+        peripheral_pm_restore();
+}
+
+static void apply_tuning_value(powergov_config_t *config, int id, int value)
+{
+    switch ((powergov_tuning_id_t)id)
+    {
+    case POWERGOV_TUNING_THRESHOLD_LOW:
+        if (value >= 1 && value <= 95)
+            config->threshold_low = value / 100.0;
+        break;
+    case POWERGOV_TUNING_THRESHOLD_MID:
+        if (value >= 1 && value <= 98)
+            config->threshold_mid = value / 100.0;
+        break;
+    case POWERGOV_TUNING_THRESHOLD_HIGH:
+        if (value >= 1 && value <= 99)
+            config->threshold_high = value / 100.0;
+        break;
+    case POWERGOV_TUNING_FREQ_CAP_BATTERY:
+        if (value >= 50 && value <= 100)
+            config->freq_cap_battery_pct = value;
+        break;
+    case POWERGOV_TUNING_LOW_BATTERY:
+        if (value >= 5 && value <= 50)
+            config->low_battery_pct = value;
+        break;
+    case POWERGOV_TUNING_PERIPHERAL_WIFI:
+        config->peripheral.wifi = value ? 1 : 0;
+        break;
+    case POWERGOV_TUNING_PERIPHERAL_SATA:
+        config->peripheral.sata = value ? 1 : 0;
+        break;
+    case POWERGOV_TUNING_PERIPHERAL_AUDIO:
+        config->peripheral.audio = value ? 1 : 0;
+        break;
+    case POWERGOV_TUNING_CUSTOM_ALLOW_PERF:
+        config->custom_allow_performance = value ? 1 : 0;
+        break;
+    case POWERGOV_TUNING_CUSTOM_RUNTIME_PM:
+        config->custom_runtime_aggressive = value ? 1 : 0;
+        break;
+    default:
+        break;
+    }
+}
+
+static void fill_tuning_reply(const powergov_config_t *config,
+                              powergov_reply_tuning_t *out)
+{
+    if (!config || !out)
+        return;
+
+    memset(out, 0, sizeof(*out));
+    out->threshold_low_pct = (int)(config->threshold_low * 100.0 + 0.5);
+    out->threshold_mid_pct = (int)(config->threshold_mid * 100.0 + 0.5);
+    out->threshold_high_pct = (int)(config->threshold_high * 100.0 + 0.5);
+    out->freq_cap_battery_pct = config->freq_cap_battery_pct;
+    out->low_battery_pct = config->low_battery_pct;
+    out->peripheral_wifi = config->peripheral.wifi;
+    out->peripheral_sata = config->peripheral.sata;
+    out->peripheral_audio = config->peripheral.audio;
+    out->custom_allow_performance = config->custom_allow_performance;
+    out->custom_runtime_aggressive = config->custom_runtime_aggressive;
+}
+
+static void defer_tlp_layers(powergov_config_t *config)
+{
+    static int logged;
+
+    if (!tlp_active() || !config)
+        return;
+
+    if (config->features.runtime_pm || config->features.peripheral_pm)
+    {
+        config->features.runtime_pm = 0;
+        config->features.peripheral_pm = 0;
+        if (!logged)
+        {
+            PG_LOG_W("loop", "TLP active; deferring runtime_pm and peripheral_pm to TLP");
+            logged = 1;
+        }
+    }
 }
 
 static int socket_write_full(int fd, const void *buf, size_t len)
@@ -114,6 +205,8 @@ static int policy_changed(const powergov_effective_policy_t *prev,
     if (prev->freq_cap_pct != cur->freq_cap_pct)
         return 1;
     if (prev->runtime_pm_aggressive != cur->runtime_pm_aggressive)
+        return 1;
+    if (prev->peripheral_pm_level != cur->peripheral_pm_level)
         return 1;
     if (prev->platform_profile != cur->platform_profile)
         return 1;
@@ -190,7 +283,7 @@ int handle_socket_config(int sockfd, powergov_config_t *config)
 
         case POWERGOV_SOCKET_CMD_SET_USER_MODE:
             if (msg.value >= POWERGOV_USER_MAX_BATTERY &&
-                msg.value <= POWERGOV_USER_PERFORMANCE)
+                msg.value <= POWERGOV_USER_CUSTOM)
             {
                 config->user_mode = (powergov_user_mode_t)msg.value;
                 powergov_config_save(config);
@@ -201,7 +294,19 @@ int handle_socket_config(int sockfd, powergov_config_t *config)
         case POWERGOV_SOCKET_CMD_SET_FEATURE:
             if (msg.value >= 0 && msg.value < POWERGOV_FEATURE_COUNT)
             {
-                int mask = powergov_features_to_mask(&config->features);
+                int mask;
+
+                if (tlp_active() &&
+                    (msg.value == POWERGOV_FEATURE_RUNTIME_PM ||
+                     msg.value == POWERGOV_FEATURE_PERIPHERAL_PM) &&
+                    msg.value2)
+                {
+                    PG_LOG_W("loop", "TLP active; cannot enable %s",
+                             powergov_feature_name((powergov_feature_id_t)msg.value));
+                    break;
+                }
+
+                mask = powergov_features_to_mask(&config->features);
                 if (msg.value2)
                     mask |= (1 << msg.value);
                 else
@@ -211,6 +316,25 @@ int handle_socket_config(int sockfd, powergov_config_t *config)
                 g_force_reapply = 1;
             }
             break;
+
+        case POWERGOV_SOCKET_CMD_SET_TUNING:
+            if (msg.value >= POWERGOV_TUNING_THRESHOLD_LOW &&
+                msg.value <= POWERGOV_TUNING_CUSTOM_RUNTIME_PM)
+            {
+                apply_tuning_value(config, msg.value, msg.value2);
+                powergov_config_save(config);
+                g_force_reapply = 1;
+            }
+            break;
+
+        case POWERGOV_SOCKET_CMD_QUERY_TUNING:
+        {
+            powergov_reply_tuning_t tr;
+            fill_tuning_reply(config, &tr);
+            if (socket_write_full(client_fd, &tr, sizeof(tr)) != 0)
+                PG_LOG_D("loop", "socket reply failed");
+            break;
+        }
 
         case POWERGOV_SOCKET_CMD_QUERY_BATTERY_CONFIG:
             status.battery_safe_enabled = config->battery_safe_enabled;
@@ -365,6 +489,8 @@ void powergov_loop(powergov_config_t *config)
         PG_LOG_W("loop", "power-profiles-daemon detected; platform_profile disabled");
     }
 
+    defer_tlp_layers(config);
+
     socket_fd = setup_socket_server();
     if (socket_fd < 0)
         PG_LOG_W("loop", "socket server unavailable");
@@ -446,6 +572,7 @@ void powergov_loop(powergov_config_t *config)
 
     cpu_policy_restore(config);
     runtime_pm_restore();
+    peripheral_pm_restore();
     cleanup_socket_server(socket_fd);
     PG_LOG_I("loop", "shutdown complete");
     powergov_log_shutdown();

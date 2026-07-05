@@ -1,6 +1,6 @@
 # Operación
 
-> **Última verificación:** 2026-07-04  
+> **Última verificación:** 2026-07-05  
 > **Fuente de verdad:** `Makefile`, `service/powergov.service`, `main.c`, `core/loop.c`
 
 ## Requisitos
@@ -81,7 +81,14 @@ En `dev-metrics`, comprobar que los subsistemas habilitados muestran `verify_ok`
 
 - **GNOME/KDE** suelen usar `power-profiles-daemon`. powergov detecta ppd y no toca `platform_profile` para evitar conflictos.
 - Si usás ppd para el perfil de plataforma, podés dejar `feature platform off` y confiar en powergov para CPU/EPP/turbo.
-- **TLP**: revisar solapamiento en governor, turbo y runtime PM; desactivar en uno de los dos si compiten.
+- **TLP:** si el servicio o stack TLP está activo (`platform/tlp_compat.c`), powergov **omite** `runtime_pm` y `peripheral_pm`. Desactivá uno de los dos para esas áreas o desactivá TLP si querés que powergov gestione dispositivos.
+
+## AppImage y actualizaciones
+
+- Build: `make appimage` → `dist/PowerGov-<version>-x86_64.AppImage`
+- Instalación usuario: `~/.local/share/powergov/PowerGov.AppImage` (sobrescribe; sin copias versionadas duplicadas en Descargas)
+- Atajos: `$XDG_DESKTOP_DIR` vía `scripts/powergov-xdg-paths.sh`
+- Release: `make release` (tarball + AppImage a GitHub Releases con `gh`)
 
 ## Permisos de log
 

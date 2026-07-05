@@ -39,6 +39,9 @@ int powergov_feature_parse_name(const char *name, powergov_feature_id_t *out)
         *out = POWERGOV_FEATURE_PLATFORM;
     else if (strcmp(name, "runtime-pm") == 0 || strcmp(name, "runtime_pm") == 0)
         *out = POWERGOV_FEATURE_RUNTIME_PM;
+    else if (strcmp(name, "peripheral-pm") == 0 ||
+             strcmp(name, "peripheral_pm") == 0)
+        *out = POWERGOV_FEATURE_PERIPHERAL_PM;
     else
         return -1;
 
@@ -63,6 +66,7 @@ static void parse_features_string(powergov_features_t *f, const char *s)
     f->cpu_turbo = 0;
     f->platform_profile = 0;
     f->runtime_pm = 0;
+    f->peripheral_pm = 0;
 
     tok = strtok_r(buf, ",", &save);
     while (tok)
@@ -146,6 +150,16 @@ int powergov_config_load(powergov_config_t *config)
             if (ival >= 5 && ival <= 50)
                 config->low_battery_pct = ival;
         }
+        else if (sscanf(line, "PERIPHERAL_WIFI=%d", &ival) == 1)
+            config->peripheral.wifi = ival ? 1 : 0;
+        else if (sscanf(line, "PERIPHERAL_SATA=%d", &ival) == 1)
+            config->peripheral.sata = ival ? 1 : 0;
+        else if (sscanf(line, "PERIPHERAL_AUDIO=%d", &ival) == 1)
+            config->peripheral.audio = ival ? 1 : 0;
+        else if (sscanf(line, "CUSTOM_ALLOW_PERFORMANCE=%d", &ival) == 1)
+            config->custom_allow_performance = ival ? 1 : 0;
+        else if (sscanf(line, "CUSTOM_RUNTIME_AGGRESSIVE=%d", &ival) == 1)
+            config->custom_runtime_aggressive = ival ? 1 : 0;
         else if (sscanf(line, "%63[^=]=%127s", key, val) == 2)
         {
             if (strcmp(key, "FEATURES_OFF") == 0)
@@ -215,6 +229,11 @@ int powergov_config_save(const powergov_config_t *config)
     fprintf(f, "THRESHOLD_HIGH=%.2f\n", config->threshold_high);
     fprintf(f, "FREQ_CAP_BATTERY=%d\n", config->freq_cap_battery_pct);
     fprintf(f, "LOW_BATTERY=%d\n", config->low_battery_pct);
+    fprintf(f, "PERIPHERAL_WIFI=%d\n", config->peripheral.wifi);
+    fprintf(f, "PERIPHERAL_SATA=%d\n", config->peripheral.sata);
+    fprintf(f, "PERIPHERAL_AUDIO=%d\n", config->peripheral.audio);
+    fprintf(f, "CUSTOM_ALLOW_PERFORMANCE=%d\n", config->custom_allow_performance);
+    fprintf(f, "CUSTOM_RUNTIME_AGGRESSIVE=%d\n", config->custom_runtime_aggressive);
 
     if (fclose(f) != 0)
         return -1;

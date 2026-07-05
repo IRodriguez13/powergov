@@ -111,6 +111,20 @@ int powergov_client_set_feature(powergov_feature_id_t id, int enabled)
                            enabled ? 1 : 0, NULL, 0);
 }
 
+int powergov_client_set_tuning(powergov_tuning_id_t id, int value)
+{
+    return socket_exchange(POWERGOV_SOCKET_CMD_SET_TUNING, (int)id, value,
+                           NULL, 0);
+}
+
+int powergov_client_query_tuning(powergov_reply_tuning_t *out)
+{
+    if (!out)
+        return -1;
+    return socket_exchange(POWERGOV_SOCKET_CMD_QUERY_TUNING, 0, 0,
+                           out, sizeof(*out));
+}
+
 int powergov_client_query_status(powergov_reply_status_t *out)
 {
     if (!out)
@@ -176,6 +190,7 @@ const char *powergov_user_mode_title(powergov_user_mode_t mode)
     case POWERGOV_USER_MAX_BATTERY: return "Modo inteligente";
     case POWERGOV_USER_BALANCED:    return "Equilibrado";
     case POWERGOV_USER_PERFORMANCE: return "Máximo rendimiento";
+    case POWERGOV_USER_CUSTOM:      return "Personalizado";
     default:                        return "Desconocido";
     }
 }

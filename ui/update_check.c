@@ -26,45 +26,6 @@ typedef struct
     char page_url[256];
 } UpdateNotice;
 
-static int parse_version_triple(const char *s, int *maj, int *min, int *pat)
-{
-    const char *p = s;
-    int a = 0;
-    int b = 0;
-    int c = 0;
-
-    if (!s || !maj || !min || !pat)
-        return 0;
-
-    while (*p == 'v' || *p == 'V' || *p == ' ')
-        p++;
-
-    if (sscanf(p, "%d.%d.%d", &a, &b, &c) < 2)
-        return 0;
-
-    *maj = a;
-    *min = b;
-    *pat = c;
-    return 1;
-}
-
-static int version_newer_than_local(const char *remote, const char *local)
-{
-    int rma, rmi, rpa;
-    int lma, lmi, lpa;
-
-    if (!parse_version_triple(remote, &rma, &rmi, &rpa))
-        return 0;
-    if (!parse_version_triple(local, &lma, &lmi, &lpa))
-        return 1;
-
-    if (rma != lma)
-        return rma > lma;
-    if (rmi != lmi)
-        return rmi > lmi;
-    return rpa > lpa;
-}
-
 static int extract_json_string(const char *json, const char *key,
                                char *out, size_t outsz)
 {
@@ -302,6 +263,24 @@ static void show_install_feedback(GtkWindow *parent)
     gtk_widget_destroy(dlg);
 }
 
+static void show_update_install_failed(GtkWindow *parent)
+{
+    GtkWidget *dlg;
+
+    if (!parent)
+        return;
+
+    dlg = gtk_message_dialog_new(
+        parent,
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        GTK_MESSAGE_ERROR,
+        GTK_BUTTONS_OK,
+        "%s",
+        _(PG_TR_UPDATE_INSTALL_FAILED));
+    gtk_dialog_run(GTK_DIALOG(dlg));
+    gtk_widget_destroy(dlg);
+}
+
 static int start_background_install(const UpdateNotice *notice)
 {
     char helper[512];
@@ -365,6 +344,8 @@ static gboolean show_update_dialog_idle(gpointer data)
     {
         if (start_background_install(notice))
             show_install_feedback(notice->parent);
+        else
+            show_update_install_failed(notice->parent);
     }
     else if (response == GTK_RESPONSE_OK)
     {
@@ -402,7 +383,7 @@ static gpointer update_worker(gpointer data)
     if (!extract_json_string(json, "tag_name", tag, sizeof(tag)))
         goto out_parent;
 
-    if (!version_newer_than_local(tag, POWERGOV_VERSION))
+    if (!powergov_version_newer(tag, POWERGOV_VERSION))
         goto out_parent;
 
     if (update_dismissed(tag))
@@ -424,6 +405,22 @@ out_parent:
     return NULL;
 }
 
+#define PG_UPDATE_CHECK_DELAY_MS 5000
+
+static gboolean deferred_update_check(gpointer data)
+{
+    GtkWindow *parent = data;
+
+    if (getenv("POWERGOV_SKIP_UPDATE_CHECK"))
+    {
+        g_object_unref(parent);
+        return G_SOURCE_REMOVE;
+    }
+
+    g_thread_new("pg-update-check", update_worker, parent);
+    return G_SOURCE_REMOVE;
+}
+
 void pg_update_check_start(GtkWindow *parent)
 {
     if (!parent)
@@ -431,6 +428,7 @@ void pg_update_check_start(GtkWindow *parent)
     if (getenv("POWERGOV_SKIP_UPDATE_CHECK"))
         return;
 
-    g_thread_new("pg-update-check", update_worker,
-                 g_object_ref(parent));
+    /* Once per launch, after UI/daemon settle — no background polling. */
+    g_timeout_add(PG_UPDATE_CHECK_DELAY_MS, deferred_update_check,
+                  g_object_ref(parent));
 }
