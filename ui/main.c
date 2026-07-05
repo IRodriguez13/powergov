@@ -118,6 +118,7 @@ struct _AppCtx
     int ui_sync;
     char dev_log_last_snapshot[POWERGOV_SOCK_LOG_SZ + 1];
     char metrics_last_snapshot[POWERGOV_SOCK_METRICS_SZ + 1];
+    char install_tmpdir[512];
 };
 
 static int pidfile_daemon_alive(void)
@@ -320,6 +321,111 @@ static int prompt_install_service(AppCtx *ctx);
 static int ensure_daemon_for_action(AppCtx *ctx);
 static void refresh_async(AppCtx *ctx);
 static void update_service_buttons(AppCtx *ctx, int systemd_active);
+
+static int path_on_appimage_mount(const char *path)
+{
+    return path && strncmp(path, "/tmp/.mount_", 12) == 0;
+}
+
+static void cleanup_install_tmpdir(AppCtx *ctx)
+{
+    char *argv[4];
+    GError *err = NULL;
+
+    if (!ctx || !ctx->install_tmpdir[0])
+        return;
+
+    argv[0] = "rm";
+    argv[1] = "-rf";
+    argv[2] = ctx->install_tmpdir;
+    argv[3] = NULL;
+
+    if (!g_spawn_sync(NULL, argv, NULL,
+                      G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL |
+                      G_SPAWN_STDERR_TO_DEV_NULL,
+                      NULL, NULL, NULL, NULL, NULL, &err))
+        g_clear_error(&err);
+
+    ctx->install_tmpdir[0] = '\0';
+}
+
+static int spawn_argv_ok(char **argv)
+{
+    GError *err = NULL;
+    int ok;
+
+    ok = g_spawn_sync(NULL, argv, NULL,
+                      G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL |
+                      G_SPAWN_STDERR_TO_DEV_NULL,
+                      NULL, NULL, NULL, NULL, NULL, &err);
+    if (!ok)
+        g_clear_error(&err);
+    return ok;
+}
+
+/* pkexec cannot execute from AppImage FUSE mounts — copy to /tmp first. */
+static int materialize_install_bundle(AppCtx *ctx, const char *helper_src,
+                                      const char *staging_src,
+                                      char *helper_dst, size_t helper_dst_sz,
+                                      char *staging_dst, size_t staging_dst_sz)
+{
+    char tmpl[] = "/tmp/powergov-install-XXXXXX";
+    char *tmpdir;
+    char staging_path[512];
+    char helper_path[512];
+    char cp_src[512];
+    char *mkdir_argv[4];
+    char *cp_tree_argv[5];
+    char *cp_helper_argv[5];
+
+    if (!path_on_appimage_mount(helper_src) &&
+        !path_on_appimage_mount(staging_src))
+    {
+        snprintf(helper_dst, helper_dst_sz, "%s", helper_src);
+        snprintf(staging_dst, staging_dst_sz, "%s", staging_src);
+        return 1;
+    }
+
+    tmpdir = mkdtemp(tmpl);
+    if (!tmpdir)
+        return 0;
+
+    snprintf(staging_path, sizeof(staging_path), "%s/staging", tmpdir);
+    snprintf(helper_path, sizeof(helper_path),
+             "%s/install-service-resident.sh", tmpdir);
+    snprintf(cp_src, sizeof(cp_src), "%s/.", staging_src);
+
+    mkdir_argv[0] = "mkdir";
+    mkdir_argv[1] = "-p";
+    mkdir_argv[2] = staging_path;
+    mkdir_argv[3] = NULL;
+
+    cp_tree_argv[0] = "cp";
+    cp_tree_argv[1] = "-a";
+    cp_tree_argv[2] = cp_src;
+    cp_tree_argv[3] = staging_path;
+    cp_tree_argv[4] = NULL;
+
+    cp_helper_argv[0] = "cp";
+    cp_helper_argv[1] = (char *)helper_src;
+    cp_helper_argv[2] = helper_path;
+    cp_helper_argv[3] = NULL;
+
+    if (!spawn_argv_ok(mkdir_argv) ||
+        !spawn_argv_ok(cp_tree_argv) ||
+        !spawn_argv_ok(cp_helper_argv) ||
+        chmod(helper_path, 0755) != 0)
+    {
+        snprintf(ctx->install_tmpdir, sizeof(ctx->install_tmpdir), "%s", tmpdir);
+        cleanup_install_tmpdir(ctx);
+        return 0;
+    }
+
+    snprintf(helper_dst, helper_dst_sz, "%s", helper_path);
+    snprintf(staging_dst, staging_dst_sz, "%s", staging_path);
+    snprintf(ctx->install_tmpdir, sizeof(ctx->install_tmpdir), "%s", tmpdir);
+    return 1;
+}
 
 static gboolean refresh_async_idle(gpointer data)
 {
@@ -761,6 +867,7 @@ static void install_child_exit(GPid pid, gint status, gpointer data)
 
     g_spawn_close_pid(pid);
     ctx->install_busy = 0;
+    cleanup_install_tmpdir(ctx);
     update_service_buttons(ctx, ctx->daemon_up);
 
     if (g_spawn_check_wait_status(status, &err))
@@ -782,6 +889,8 @@ static void start_install_async(AppCtx *ctx)
 {
     char helper[512];
     char staging[512];
+    char helper_run[512];
+    char staging_run[512];
     char *argv[4];
     GError *err = NULL;
     GPid pid;
@@ -791,8 +900,22 @@ static void start_install_async(AppCtx *ctx)
     if (ctx->install_busy)
         return;
 
+    cleanup_install_tmpdir(ctx);
+
     if (!resolve_install_helper(helper, sizeof(helper)) ||
         !resolve_install_staging(staging, sizeof(staging)))
+    {
+        show_feedback(ctx, 0, _(PG_TR_ERR_INSTALL_UNAVAILABLE));
+        append_action_log(ctx, _(PG_TR_ERR_INSTALL_UNAVAILABLE));
+        return;
+    }
+
+    if (path_on_appimage_mount(helper) || path_on_appimage_mount(staging))
+        show_feedback(ctx, 1, _(PG_TR_FB_INSTALL_PREPARING));
+
+    if (!materialize_install_bundle(ctx, helper, staging,
+                                    helper_run, sizeof(helper_run),
+                                    staging_run, sizeof(staging_run)))
     {
         show_feedback(ctx, 0, _(PG_TR_ERR_INSTALL_UNAVAILABLE));
         append_action_log(ctx, _(PG_TR_ERR_INSTALL_UNAVAILABLE));
@@ -802,12 +925,13 @@ static void start_install_async(AppCtx *ctx)
     if (access(POWERGOV_PKEXEC, X_OK) != 0)
     {
         show_feedback(ctx, 0, _(PG_TR_ERR_DEV_NO_PKEXEC));
+        cleanup_install_tmpdir(ctx);
         return;
     }
 
     argv[0] = (char *)POWERGOV_PKEXEC;
-    argv[1] = helper;
-    argv[2] = staging;
+    argv[1] = helper_run;
+    argv[2] = staging_run;
     argv[3] = NULL;
 
     if (!g_spawn_async(NULL, argv, NULL,
@@ -815,12 +939,14 @@ static void start_install_async(AppCtx *ctx)
                        NULL, NULL, &pid, &err))
     {
         show_feedback(ctx, 0, _(PG_TR_ERR_INSTALL_FAILED));
+        cleanup_install_tmpdir(ctx);
         g_clear_error(&err);
         return;
     }
 
     ctx->install_busy = 1;
     update_service_buttons(ctx, ctx->daemon_up);
+    show_feedback(ctx, 1, _(PG_TR_FB_INSTALL_RUNNING));
     append_action_log(ctx, _(PG_TR_LOG_INSTALL_STARTED));
     g_child_watch_add(pid, install_child_exit, ctx);
 }

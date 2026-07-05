@@ -126,6 +126,8 @@ static const char *const g_es[PG_TR_COUNT] =
     [PG_TR_LOG_INSTALL_STARTED] = "Instalación del servicio solicitada",
     [PG_TR_LOG_INSTALL_OK] = "Servicio PowerGov instalado",
     [PG_TR_FB_INSTALL_OK] = "Servicio instalado y en ejecución",
+    [PG_TR_FB_INSTALL_PREPARING] = "Preparando instalación del servicio…",
+    [PG_TR_FB_INSTALL_RUNNING] = "Instalando servicio (puede pedir contraseña de admin)…",
     [PG_TR_LOG_LANG_AUTO] =
         "Idioma: español (detectado del sistema: %s)",
 };
@@ -242,6 +244,8 @@ static const char *const g_en[PG_TR_COUNT] =
     [PG_TR_LOG_INSTALL_STARTED] = "Service installation requested",
     [PG_TR_LOG_INSTALL_OK] = "PowerGov service installed",
     [PG_TR_FB_INSTALL_OK] = "Service installed and running",
+    [PG_TR_FB_INSTALL_PREPARING] = "Preparing service installation…",
+    [PG_TR_FB_INSTALL_RUNNING] = "Installing service (admin password may be required)…",
     [PG_TR_LOG_LANG_AUTO] =
         "Language: English (detected from system: %s)",
 };
