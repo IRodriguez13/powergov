@@ -145,6 +145,12 @@ static const char *const g_es[PG_TR_COUNT] =
     [PG_TR_FB_UNINSTALL_OK] = "Desinstalación completada. Cierre la aplicación.",
     [PG_TR_FB_UNINSTALL_RUNNING] =
         "Desinstalando (puede pedir contraseña de administrador)…",
+    [PG_TR_UPDATE_AVAILABLE_TITLE] = "Hay una versión nueva de PowerGov",
+    [PG_TR_UPDATE_AVAILABLE_BODY] =
+        "Versión %s disponible en GitHub (instalada: %s).\n\n"
+        "Abrí la página de descarga para obtener el AppImage o el tarball.",
+    [PG_TR_UPDATE_BTN_LATER] = "Ahora no",
+    [PG_TR_UPDATE_BTN_OPEN] = "Abrir descarga",
     [PG_TR_LOG_LANG_AUTO] =
         "Idioma: español (detectado del sistema: %s)",
 };
@@ -279,6 +285,12 @@ static const char *const g_en[PG_TR_COUNT] =
     [PG_TR_FB_UNINSTALL_OK] = "Uninstall complete. You may close the app.",
     [PG_TR_FB_UNINSTALL_RUNNING] =
         "Uninstalling (admin password may be required)…",
+    [PG_TR_UPDATE_AVAILABLE_TITLE] = "A new PowerGov release is available",
+    [PG_TR_UPDATE_AVAILABLE_BODY] =
+        "Version %s is on GitHub (installed: %s).\n\n"
+        "Open the download page to get the AppImage or tarball.",
+    [PG_TR_UPDATE_BTN_LATER] = "Not now",
+    [PG_TR_UPDATE_BTN_OPEN] = "Open download",
     [PG_TR_LOG_LANG_AUTO] =
         "Language: English (detected from system: %s)",
 };

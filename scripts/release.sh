@@ -45,7 +45,9 @@ NOTES="$(cat <<EOF
 
 ### Cambios en ${VERSION}
 
-- Al ejecutar desde terminal, la UI se desacopla del shell (cerrar la terminal no cierra PowerGov). \`POWERGOV_FG=1\` mantiene el proceso en primer plano para depuración.
+- **Aviso de actualización:** al abrir la app, consulta GitHub Releases (sin servidor propio). Si hay versión nueva, ofrece abrir la página de descarga. «Ahora no» no vuelve a avisar por esa versión.
+- **Modo inteligente:** ahorro agresivo (techo CPU, low-power, runtime PM) solo con batería **≤ 15 %** (antes 20 %).
+- Desinstalación desde la UI, acceso directo automático, desacoplo de terminal (\`POWERGOV_FG=1\` para depuración).
 
 ### Instalación desde código fuente (tarball)
 

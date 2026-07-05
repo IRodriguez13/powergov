@@ -58,7 +58,7 @@ ICON_ROOT = /usr/share/icons/hicolor
 DESKTOP_FILE = data/powergov-ui.desktop
 DESKTOP_DIR = /usr/share/applications
 PACK_DIRS = VERSION Makefile README.md main.c src include core cpu power platform devices log metrics config client data Documentation completions doc service scripts .gitignore
-PACK_UI = ui/main.c ui/i18n.c ui/i18n.h ui/README.md
+PACK_UI = ui/main.c ui/i18n.c ui/i18n.h ui/update_check.c ui/update_check.h ui/README.md
 
 LIB_OBJ = client/libpowergov.o include/powergov/types_lib.o
 
@@ -76,9 +76,9 @@ $(LIBPOWERGOV): $(LIB_OBJ)
 client/%.o: client/%.c
 	$(CC) $(CFLAGS) -fPIC -c $< -o $@
 
-$(UI_BIN): ui/main.c ui/i18n.c $(LIBPOWERGOV)
+$(UI_BIN): ui/main.c ui/i18n.c ui/update_check.c $(LIBPOWERGOV)
 	@test -n "$(GTK_LIBS)" || (echo "gtk+-3.0 no encontrado (pkg-config)" && exit 1)
-	$(CC) $(CFLAGS) $(GTK_CFLAGS) -o $(UI_BIN) ui/main.c ui/i18n.c \
+	$(CC) $(CFLAGS) $(GTK_CFLAGS) -o $(UI_BIN) ui/main.c ui/i18n.c ui/update_check.c \
 		-L. -lpowergov -Wl,-rpath,'$$ORIGIN' $(GTK_LIBS)
 
 install: install-bin install-man install-completion install-lib install-ui-policy

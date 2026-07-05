@@ -5,6 +5,7 @@
  */
 #include <powergov/client.h>
 #include "i18n.h"
+#include "update_check.h"
 #include <gtk/gtk.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -2329,6 +2330,7 @@ int main(int argc, char **argv)
     refresh_async(&ctx);
     ctx.timer_id = g_timeout_add(REFRESH_MS, on_timer, &ctx);
     gtk_widget_show_all(ctx.window);
+    pg_update_check_start(GTK_WINDOW(ctx.window));
     gtk_main();
     if (ctx.timer_id)
         g_source_remove(ctx.timer_id);
