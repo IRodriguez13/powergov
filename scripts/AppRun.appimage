@@ -5,4 +5,12 @@ export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${LD_LIBRARY_PATH:-}"
 export POWERGOV_ICON_ROOT="${APPDIR}/usr/share/icons/hicolor"
 export POWERGOV_INSTALL_STAGING="${APPDIR}/usr/lib/powergov/staging"
 export POWERGOV_INSTALL_HELPER="${APPDIR}/usr/libexec/powergov/install-service-resident.sh"
+
+if [ -n "${APPIMAGE:-}" ] && [ -f "${APPIMAGE}" ] && [ "$(id -u)" -ne 0 ]; then
+    DESKTOP_HELPER="${APPDIR}/usr/libexec/powergov/install-appimage-desktop.sh"
+    if [ -x "${DESKTOP_HELPER}" ]; then
+        "${DESKTOP_HELPER}" "${APPIMAGE}" "${APPDIR}" &
+    fi
+fi
+
 exec "${APPDIR}/usr/bin/powergov-ui" "$@"

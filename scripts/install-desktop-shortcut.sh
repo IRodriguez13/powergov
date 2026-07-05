@@ -16,19 +16,69 @@ if [[ ! -f "${SOURCE}" ]]; then
     exit 1
 fi
 
-DESKTOP_DIR="${XDG_DESKTOP_DIR:-${HOME}/Desktop}"
-mkdir -p "${DESKTOP_DIR}"
-TARGET="${DESKTOP_DIR}/powergov-ui.desktop"
+canonical_dir() {
+    local d=$1
+    if [[ -d "${d}" ]] && command -v realpath >/dev/null 2>&1; then
+        realpath "${d}"
+    else
+        printf '%s' "${d}"
+    fi
+}
 
-if command -v xdg-desktop-icon >/dev/null 2>&1; then
-    xdg-desktop-icon install "${SOURCE}"
-    TARGET="${DESKTOP_DIR}/powergov-ui.desktop"
-else
-    install -m 644 "${SOURCE}" "${TARGET}"
-fi
+resolve_desktop_dirs() {
+    local -a candidates=()
+    local primary="" d canon
 
-if command -v gio >/dev/null 2>&1 && [[ -f "${TARGET}" ]]; then
-    gio set "${TARGET}" metadata::trusted true 2>/dev/null || true
-fi
+    if command -v xdg-user-dir >/dev/null 2>&1; then
+        primary="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
+        [[ -n "${primary}" ]] && candidates+=("${primary}")
+    fi
 
-echo "Desktop shortcut: ${TARGET}"
+    if [[ -n "${XDG_DESKTOP_DIR:-}" ]]; then
+        candidates+=("${XDG_DESKTOP_DIR}")
+    fi
+    candidates+=("${HOME}/Desktop" "${HOME}/Escritorio")
+
+    declare -A seen_dirs=()
+    local -a existing=()
+
+    for d in "${candidates[@]}"; do
+        [[ -z "${d}" || "${d}" == "/" ]] && continue
+        canon="$(canonical_dir "${d}")"
+        [[ -n "${canon}" && -z "${seen_dirs[${canon}]+x}" ]] || continue
+        seen_dirs["${canon}"]=1
+        if [[ -d "${d}" ]]; then
+            existing+=("${d}")
+        fi
+    done
+
+    if [[ ${#existing[@]} -eq 0 ]]; then
+        if [[ -z "${primary}" ]] && command -v xdg-user-dir >/dev/null 2>&1; then
+            primary="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
+        fi
+        if [[ -z "${primary}" ]]; then
+            primary="${XDG_DESKTOP_DIR:-${HOME}/Desktop}"
+        fi
+        mkdir -p "${primary}"
+        existing=("${primary}")
+    fi
+
+    printf '%s\n' "${existing[@]}"
+}
+
+install_desktop_shortcut() {
+    local source=$1
+    local dir=$2
+    local shortcut="${dir}/powergov-ui.desktop"
+
+    install -m 644 "${source}" "${shortcut}"
+    if command -v gio >/dev/null 2>&1; then
+        gio set "${shortcut}" metadata::trusted true 2>/dev/null || true
+    fi
+    echo "Desktop shortcut: ${shortcut}"
+}
+
+while IFS= read -r desktop_dir; do
+    [[ -n "${desktop_dir}" ]] || continue
+    install_desktop_shortcut "${SOURCE}" "${desktop_dir}"
+done < <(resolve_desktop_dirs)

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Maintainer-only: build a precompiled AppImage for end users.
 # Users download the .AppImage from GitHub Releases — they do not run this script.
-# First launch: UI prompts to install the background service (pkexec, one-time).
+# First launch: user menu/desktop shortcut + UI prompts for service install (pkexec).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -39,7 +39,8 @@ fetch_tool() {
 echo "==> build powergov-ui + libpowergov.so + install staging"
 make -s libpowergov.so powergov-ui
 STAGING="${ROOT}/.staging/appimage"
-chmod +x scripts/prepare-install-staging.sh scripts/install-service-resident.sh
+chmod +x scripts/prepare-install-staging.sh scripts/install-service-resident.sh \
+    scripts/install-appimage-desktop.sh
 ./scripts/prepare-install-staging.sh "${STAGING}"
 
 echo "==> fetch linuxdeploy (cached in .build/appimage/)"
@@ -62,7 +63,10 @@ cp "${ROOT}/powergov-ui" "${APPDIR}/usr/bin/"
 cp "${ROOT}/libpowergov.so" "${APPDIR}/usr/lib/"
 cp "${ROOT}/scripts/install-service-resident.sh" \
     "${APPDIR}/usr/libexec/powergov/install-service-resident.sh"
-chmod +x "${APPDIR}/usr/libexec/powergov/install-service-resident.sh"
+cp "${ROOT}/scripts/install-appimage-desktop.sh" \
+    "${APPDIR}/usr/libexec/powergov/install-appimage-desktop.sh"
+chmod +x "${APPDIR}/usr/libexec/powergov/install-service-resident.sh" \
+    "${APPDIR}/usr/libexec/powergov/install-appimage-desktop.sh"
 
 cat > "${DESKTOP}" <<EOF
 [Desktop Entry]

@@ -35,9 +35,10 @@ NOTES="$(cat <<EOF
 
 1. Descargá \`PowerGov-${VERSION}-x86_64.AppImage\`
 2. \`chmod +x PowerGov-${VERSION}-x86_64.AppImage && ./PowerGov-${VERSION}-x86_64.AppImage\`
-3. En el **primer arranque**, la UI detecta el idioma del sistema (es → español; resto → inglés) y pregunta si instalar el servicio en segundo plano.
-4. Si aceptás, se pide contraseña de administrador **una vez** y queda todo el backend (systemd + daemon) listo.
-5. Si no aceptás, cualquier acción que requiera el servicio vuelve a preguntar.
+3. En el **primer arranque**, se crea acceso en el menú de aplicaciones y en el escritorio (Escritorio o Desktop según tu sistema).
+4. La UI detecta el idioma del sistema (es → español; resto → inglés) y pregunta si instalar el servicio en segundo plano.
+5. Si aceptás, se pide contraseña de administrador **una vez** y queda todo el backend (systemd + daemon) listo.
+6. Si no aceptás, cualquier acción que requiera el servicio vuelve a preguntar.
 
 **No hace falta compilar nada** para usar el AppImage.
 
