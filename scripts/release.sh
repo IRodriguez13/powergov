@@ -45,7 +45,7 @@ NOTES="$(cat <<EOF
 
 ### Cambios en ${VERSION}
 
-- Release de verificación del aviso de actualización en la UI (usuarios en 1.9.0 deberían ver el diálogo al abrir la app).
+- **Actualización in-app:** diálogo con «Ahora no», «Abrir descarga» e **«Instalar»** (descarga el AppImage nuevo en segundo plano y actualiza accesos directos).
 
 ### Instalación desde código fuente (tarball)
 

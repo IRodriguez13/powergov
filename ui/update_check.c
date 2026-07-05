@@ -16,6 +16,8 @@
     "https://api.github.com/repos/IRodriguez13/powergov/releases/latest"
 #define PG_RELEASES_PAGE \
     POWERGOV_SOURCE_URL "/releases/latest"
+#define PG_UPDATE_INSTALL_HELPER_DEFAULT \
+    "/usr/local/libexec/powergov/install-appimage-update.sh"
 
 typedef struct
 {
@@ -103,6 +105,66 @@ static int extract_json_string(const char *json, const char *key,
     memcpy(out, start, len);
     out[len] = '\0';
     return 1;
+}
+
+static int try_helper_path(const char *path, char *out, size_t outsz)
+{
+    if (!path || !path[0] || access(path, X_OK) != 0)
+        return 0;
+    g_strlcpy(out, path, outsz);
+    return 1;
+}
+
+static int read_ui_self_dir(char *buf, size_t len)
+{
+    ssize_t n;
+    char *slash;
+
+    if (!buf || len == 0)
+        return 0;
+
+    n = readlink("/proc/self/exe", buf, len - 1);
+    if (n <= 0)
+        return 0;
+
+    buf[n] = '\0';
+    slash = strrchr(buf, '/');
+    if (!slash)
+        return 0;
+
+    *slash = '\0';
+    return 1;
+}
+
+static int resolve_update_install_helper(char *out, size_t outsz)
+{
+    const char *env;
+    char self_dir[512];
+    char path[512];
+
+    if (!out || outsz == 0)
+        return 0;
+
+    env = getenv("POWERGOV_UPDATE_INSTALL_HELPER");
+    if (env && try_helper_path(env, out, outsz))
+        return 1;
+
+    if (try_helper_path(PG_UPDATE_INSTALL_HELPER_DEFAULT, out, outsz))
+        return 1;
+
+    if (read_ui_self_dir(self_dir, sizeof(self_dir)))
+    {
+        snprintf(path, sizeof(path),
+                 "%s/../libexec/powergov/install-appimage-update.sh",
+                 self_dir);
+        if (try_helper_path(path, out, outsz))
+            return 1;
+    }
+
+    if (try_helper_path("scripts/install-appimage-update.sh", out, outsz))
+        return 1;
+
+    return 0;
 }
 
 static int fetch_latest_release(char *body, size_t body_sz)
@@ -201,7 +263,7 @@ static void save_dismissed(const char *remote_ver)
     g_free(path);
 }
 
-static void open_release_page(UpdateNotice *notice)
+static void open_release_page(const UpdateNotice *notice)
 {
     GError *err = NULL;
 
@@ -220,6 +282,50 @@ static void open_release_page(UpdateNotice *notice)
                       NULL, NULL, NULL, NULL);
         g_clear_error(&err);
     }
+}
+
+static void show_install_feedback(GtkWindow *parent)
+{
+    GtkWidget *dlg;
+
+    if (!parent)
+        return;
+
+    dlg = gtk_message_dialog_new(
+        parent,
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        GTK_MESSAGE_INFO,
+        GTK_BUTTONS_OK,
+        "%s",
+        _(PG_TR_UPDATE_FB_INSTALL_STARTED));
+    gtk_dialog_run(GTK_DIALOG(dlg));
+    gtk_widget_destroy(dlg);
+}
+
+static int start_background_install(const UpdateNotice *notice)
+{
+    char helper[512];
+    char *argv[3];
+    GError *err = NULL;
+
+    if (!notice)
+        return 0;
+
+    if (!resolve_update_install_helper(helper, sizeof(helper)))
+        return 0;
+
+    argv[0] = helper;
+    argv[1] = notice->remote_ver;
+    argv[2] = NULL;
+
+    if (!g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH,
+                       NULL, NULL, NULL, &err))
+    {
+        g_clear_error(&err);
+        return 0;
+    }
+
+    return 1;
 }
 
 static gboolean show_update_dialog_idle(gpointer data)
@@ -248,15 +354,26 @@ static gboolean show_update_dialog_idle(gpointer data)
                           GTK_RESPONSE_CANCEL);
     gtk_dialog_add_button(GTK_DIALOG(dlg), _(PG_TR_UPDATE_BTN_OPEN),
                           GTK_RESPONSE_OK);
-    gtk_dialog_set_default_response(GTK_DIALOG(dlg), GTK_RESPONSE_OK);
+    gtk_dialog_add_button(GTK_DIALOG(dlg), _(PG_TR_UPDATE_BTN_INSTALL),
+                          GTK_RESPONSE_APPLY);
+    gtk_dialog_set_default_response(GTK_DIALOG(dlg), GTK_RESPONSE_APPLY);
 
     response = gtk_dialog_run(GTK_DIALOG(dlg));
     gtk_widget_destroy(dlg);
 
-    if (response == GTK_RESPONSE_OK)
+    if (response == GTK_RESPONSE_APPLY)
+    {
+        if (start_background_install(notice))
+            show_install_feedback(notice->parent);
+    }
+    else if (response == GTK_RESPONSE_OK)
+    {
         open_release_page(notice);
+    }
     else
+    {
         save_dismissed(notice->remote_ver);
+    }
 
 out:
     if (notice)

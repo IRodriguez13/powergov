@@ -151,6 +151,10 @@ static const char *const g_es[PG_TR_COUNT] =
         "Abrí la página de descarga para obtener el AppImage o el tarball.",
     [PG_TR_UPDATE_BTN_LATER] = "Ahora no",
     [PG_TR_UPDATE_BTN_OPEN] = "Abrir descarga",
+    [PG_TR_UPDATE_BTN_INSTALL] = "Instalar",
+    [PG_TR_UPDATE_FB_INSTALL_STARTED] =
+        "Descargando e instalando en segundo plano. "
+        "Log: ~/.config/powergov/update-install.log",
     [PG_TR_LOG_LANG_AUTO] =
         "Idioma: español (detectado del sistema: %s)",
 };
@@ -291,6 +295,10 @@ static const char *const g_en[PG_TR_COUNT] =
         "Open the download page to get the AppImage or tarball.",
     [PG_TR_UPDATE_BTN_LATER] = "Not now",
     [PG_TR_UPDATE_BTN_OPEN] = "Open download",
+    [PG_TR_UPDATE_BTN_INSTALL] = "Install",
+    [PG_TR_UPDATE_FB_INSTALL_STARTED] =
+        "Downloading and installing in the background. "
+        "Log: ~/.config/powergov/update-install.log",
     [PG_TR_LOG_LANG_AUTO] =
         "Language: English (detected from system: %s)",
 };

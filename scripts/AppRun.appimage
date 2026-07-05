@@ -7,6 +7,7 @@ export POWERGOV_INSTALL_STAGING="${APPDIR}/usr/lib/powergov/staging"
 export POWERGOV_INSTALL_HELPER="${APPDIR}/usr/libexec/powergov/install-service-resident.sh"
 export POWERGOV_UNINSTALL_HELPER="${APPDIR}/usr/libexec/powergov/powergov-uninstall.sh"
 export POWERGOV_USER_CLEANUP_HELPER="${APPDIR}/usr/libexec/powergov/remove-appimage-user-files.sh"
+export POWERGOV_UPDATE_INSTALL_HELPER="${APPDIR}/usr/libexec/powergov/install-appimage-update.sh"
 
 if [ -n "${APPIMAGE:-}" ] && [ -f "${APPIMAGE}" ] && [ "$(id -u)" -ne 0 ]; then
     DESKTOP_HELPER="${APPDIR}/usr/libexec/powergov/install-appimage-desktop.sh"
