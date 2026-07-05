@@ -1,14 +1,16 @@
 /*
- * i18n.c - UI strings (Spanish default, English optional)
+ * i18n.c - UI strings (English default; Spanish if system locale is es*)
  * Copyright (C) 2026 Iván Ezequiel Rodriguez
  * License: GPLv3+
  */
 #include "i18n.h"
 #include <locale.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 static int g_lang_en;
+static char g_locale_detected[96];
 
 static const char *const g_es[PG_TR_COUNT] =
 {
@@ -23,6 +25,7 @@ static const char *const g_es[PG_TR_COUNT] =
     [PG_TR_BTN_DEV_MODE] = "Modo desarrollador",
     [PG_TR_BTN_USER_MODE] = "Volver a modo usuario",
     [PG_TR_BTN_START_SERVICE] = "Iniciar servicio",
+    [PG_TR_BTN_INSTALL_SERVICE] = "Instalar servicio",
     [PG_TR_BTN_STOP] = "Detener",
     [PG_TR_BTN_RESTART] = "Reiniciar",
     [PG_TR_LABEL_BATTERY_PROTECT] = "Protección batería (%)",
@@ -33,6 +36,8 @@ static const char *const g_es[PG_TR_COUNT] =
     [PG_TR_STATUS_NO_RESPOND] =
         "PowerGov no responde — prueba reiniciar el servicio",
     [PG_TR_STATUS_NOT_RUNNING] = "PowerGov no está en ejecución",
+    [PG_TR_STATUS_NOT_INSTALLED] =
+        "PowerGov no está instalado en este equipo",
     [PG_TR_STATUS_READ_ERROR] = "Error leyendo estado del daemon",
     [PG_TR_STATUS_ACTIVE_PROFILE] = "Perfil activo: %s",
     [PG_TR_POWER_PLUGGED] = "Enchufado",
@@ -84,11 +89,40 @@ static const char *const g_es[PG_TR_COUNT] =
         "Platform profile: %s\nRAPL: %s",
     [PG_TR_COMPAT_SCORE_FMT] = "Score: %d — %s\n\n",
     [PG_TR_COMPAT_ROW_FMT] = "%-12s [%s] hw=%d en=%d — %s\n",
+    [PG_TR_COMPAT_SUMMARY_FMT] =
+        "%d subsistemas soportados, %d parciales, de %d totales.",
+    [PG_TR_COMPAT_ST_UNSUPPORTED] = "no soportado",
+    [PG_TR_COMPAT_ST_SUPPORTED] = "soportado",
+    [PG_TR_COMPAT_ST_PARTIAL] = "parcial",
+    [PG_TR_COMPAT_ST_CONFLICT] = "conflicto",
+    [PG_TR_CORE_NO_METRICS] = "(sin métricas)",
+    [PG_TR_CORE_LOG_READ_FAIL] = "No se pudo leer %s",
     [PG_TR_YES] = "sí",
     [PG_TR_NO] = "no",
     [PG_TR_ACTIVE] = "activo",
     [PG_TR_INACTIVE] = "inactivo",
     [PG_TR_LANG_TOOLTIP] = "Cambiar a inglés",
+    [PG_TR_INSTALL_DIALOG_TITLE] = "Instalar servicio PowerGov",
+    [PG_TR_INSTALL_DIALOG_BODY] =
+        "PowerGov necesita un servicio en segundo plano en tu PC para:\n"
+        "• Cambiar perfiles de energía (CPU, batería, rendimiento)\n"
+        "• Mantener la protección de batería mientras usás el portátil\n"
+        "• Aplicar ajustes de forma continua sin abrir la aplicación\n\n"
+        "La instalación pide contraseña de administrador una sola vez.\n"
+        "¿Querés instalarlo ahora?",
+    [PG_TR_INSTALL_DIALOG_YES] = "Instalar",
+    [PG_TR_INSTALL_DIALOG_NO] = "Ahora no",
+    [PG_TR_ERR_SERVICE_NOT_RUNNING] =
+        "El servicio no está activo. Usá «Iniciar servicio».",
+    [PG_TR_ERR_INSTALL_UNAVAILABLE] =
+        "No se encontraron archivos para instalar el servicio",
+    [PG_TR_ERR_INSTALL_FAILED] = "No se pudo instalar el servicio",
+    [PG_TR_ERR_INSTALL_DENIED] = "Instalación cancelada o denegada",
+    [PG_TR_LOG_INSTALL_STARTED] = "Instalación del servicio solicitada",
+    [PG_TR_LOG_INSTALL_OK] = "Servicio PowerGov instalado",
+    [PG_TR_FB_INSTALL_OK] = "Servicio instalado y en ejecución",
+    [PG_TR_LOG_LANG_AUTO] =
+        "Idioma: español (detectado del sistema: %s)",
 };
 
 static const char *const g_en[PG_TR_COUNT] =
@@ -104,6 +138,7 @@ static const char *const g_en[PG_TR_COUNT] =
     [PG_TR_BTN_DEV_MODE] = "Developer mode",
     [PG_TR_BTN_USER_MODE] = "Back to user mode",
     [PG_TR_BTN_START_SERVICE] = "Start service",
+    [PG_TR_BTN_INSTALL_SERVICE] = "Install service",
     [PG_TR_BTN_STOP] = "Stop",
     [PG_TR_BTN_RESTART] = "Restart",
     [PG_TR_LABEL_BATTERY_PROTECT] = "Battery protection (%)",
@@ -114,6 +149,8 @@ static const char *const g_en[PG_TR_COUNT] =
     [PG_TR_STATUS_NO_RESPOND] =
         "PowerGov is not responding — try restarting the service",
     [PG_TR_STATUS_NOT_RUNNING] = "PowerGov is not running",
+    [PG_TR_STATUS_NOT_INSTALLED] =
+        "PowerGov is not installed on this system",
     [PG_TR_STATUS_READ_ERROR] = "Error reading daemon status",
     [PG_TR_STATUS_ACTIVE_PROFILE] = "Active profile: %s",
     [PG_TR_POWER_PLUGGED] = "Plugged in",
@@ -163,11 +200,40 @@ static const char *const g_en[PG_TR_COUNT] =
         "Platform profile: %s\nRAPL: %s",
     [PG_TR_COMPAT_SCORE_FMT] = "Score: %d — %s\n\n",
     [PG_TR_COMPAT_ROW_FMT] = "%-12s [%s] hw=%d en=%d — %s\n",
+    [PG_TR_COMPAT_SUMMARY_FMT] =
+        "%d subsystems supported, %d partial, of %d total.",
+    [PG_TR_COMPAT_ST_UNSUPPORTED] = "unsupported",
+    [PG_TR_COMPAT_ST_SUPPORTED] = "supported",
+    [PG_TR_COMPAT_ST_PARTIAL] = "partial",
+    [PG_TR_COMPAT_ST_CONFLICT] = "conflict",
+    [PG_TR_CORE_NO_METRICS] = "(no metrics)",
+    [PG_TR_CORE_LOG_READ_FAIL] = "Could not read %s",
     [PG_TR_YES] = "yes",
     [PG_TR_NO] = "no",
     [PG_TR_ACTIVE] = "active",
     [PG_TR_INACTIVE] = "inactive",
     [PG_TR_LANG_TOOLTIP] = "Switch to Spanish",
+    [PG_TR_INSTALL_DIALOG_TITLE] = "Install PowerGov service",
+    [PG_TR_INSTALL_DIALOG_BODY] =
+        "PowerGov needs a background service on your PC to:\n"
+        "• Change power profiles (CPU, battery, performance)\n"
+        "• Keep battery protection active while you use the laptop\n"
+        "• Apply settings continuously without keeping the app open\n\n"
+        "Installation asks for your administrator password once.\n"
+        "Do you want to install it now?",
+    [PG_TR_INSTALL_DIALOG_YES] = "Install",
+    [PG_TR_INSTALL_DIALOG_NO] = "Not now",
+    [PG_TR_ERR_SERVICE_NOT_RUNNING] =
+        "The service is not running. Use «Start service».",
+    [PG_TR_ERR_INSTALL_UNAVAILABLE] =
+        "Could not find files to install the service",
+    [PG_TR_ERR_INSTALL_FAILED] = "Could not install the service",
+    [PG_TR_ERR_INSTALL_DENIED] = "Installation cancelled or denied",
+    [PG_TR_LOG_INSTALL_STARTED] = "Service installation requested",
+    [PG_TR_LOG_INSTALL_OK] = "PowerGov service installed",
+    [PG_TR_FB_INSTALL_OK] = "Service installed and running",
+    [PG_TR_LOG_LANG_AUTO] =
+        "Language: English (detected from system: %s)",
 };
 
 static int locale_is_spanish(const char *lang)
@@ -178,31 +244,99 @@ static int locale_is_spanish(const char *lang)
             (lang[2] == '\0' || lang[2] == '_' || lang[2] == '-'));
 }
 
-static int locale_is_english(const char *lang)
+static void copy_locale_token(const char *lang, char *out, size_t outsz)
 {
+    const char *end;
+    size_t n;
+
+    if (!out || outsz == 0)
+        return;
+
+    out[0] = '\0';
     if (!lang || !lang[0])
-        return 0;
-    return (lang[0] == 'e' && lang[1] == 'n' &&
-            (lang[2] == '\0' || lang[2] == '_' || lang[2] == '-'));
+        return;
+
+    end = lang;
+    while (*end && *end != ':' && *end != '@' && *end != '.')
+        end++;
+
+    n = (size_t)(end - lang);
+    if (n >= outsz)
+        n = outsz - 1;
+
+    memcpy(out, lang, n);
+    out[n] = '\0';
+}
+
+static const char *locale_env_source(void)
+{
+    const char *lang;
+
+    lang = getenv("LANGUAGE");
+    if (lang && lang[0])
+        return lang;
+
+    lang = getenv("LC_MESSAGES");
+    if (lang && lang[0])
+        return lang;
+
+    lang = getenv("LANG");
+    if (lang && lang[0])
+        return lang;
+
+    return NULL;
+}
+
+static void detect_system_language(void)
+{
+    const char *raw;
+    char token[32];
+    const char *resolved;
+
+    g_lang_en = 1;
+    g_locale_detected[0] = '\0';
+
+    setlocale(LC_ALL, "");
+
+    raw = locale_env_source();
+    if (raw)
+    {
+        copy_locale_token(raw, token, sizeof(token));
+        snprintf(g_locale_detected, sizeof(g_locale_detected), "%s", raw);
+    }
+    else
+    {
+        resolved = setlocale(LC_MESSAGES, NULL);
+        if (resolved && resolved[0] && strcmp(resolved, "C") != 0 &&
+            strcmp(resolved, "POSIX") != 0)
+        {
+            copy_locale_token(resolved, token, sizeof(token));
+            snprintf(g_locale_detected, sizeof(g_locale_detected),
+                     "%s", resolved);
+        }
+        else
+        {
+            snprintf(g_locale_detected, sizeof(g_locale_detected), "%s",
+                     "C/POSIX→en");
+            token[0] = '\0';
+        }
+    }
+
+    if (locale_is_spanish(token))
+        g_lang_en = 0;
 }
 
 void pg_i18n_init(void)
 {
-    const char *lang;
+    detect_system_language();
+}
 
-    setlocale(LC_ALL, "");
-    g_lang_en = 1;
+void pg_i18n_format_startup_log(char *buf, size_t bufsz)
+{
+    if (!buf || bufsz == 0)
+        return;
 
-    lang = getenv("LANGUAGE");
-    if (!lang || !lang[0])
-        lang = getenv("LC_MESSAGES");
-    if (!lang || !lang[0])
-        lang = getenv("LANG");
-
-    if (locale_is_spanish(lang))
-        g_lang_en = 0;
-    else if (locale_is_english(lang))
-        g_lang_en = 1;
+    snprintf(buf, bufsz, pg_tr(PG_TR_LOG_LANG_AUTO), g_locale_detected);
 }
 
 void pg_i18n_set_english(int english)
@@ -302,4 +436,79 @@ const char *pg_service_action_label(const char *systemctl_action)
         return pg_tr(PG_TR_SVC_ACTION_RESTART);
 
     return systemctl_action;
+}
+
+const char *pg_compat_state_label(int state)
+{
+    switch (state)
+    {
+    case POWERGOV_COMPAT_SUPPORTED:
+        return pg_tr(PG_TR_COMPAT_ST_SUPPORTED);
+    case POWERGOV_COMPAT_PARTIAL:
+        return pg_tr(PG_TR_COMPAT_ST_PARTIAL);
+    case POWERGOV_COMPAT_CONFLICT:
+        return pg_tr(PG_TR_COMPAT_ST_CONFLICT);
+    default:
+        return pg_tr(PG_TR_COMPAT_ST_UNSUPPORTED);
+    }
+}
+
+const char *pg_compat_detail_tr(const char *detail_en)
+{
+    if (!detail_en || !detail_en[0])
+        return "";
+
+    if (pg_i18n_is_english())
+        return detail_en;
+
+    if (strcmp(detail_en, "Not available on this hardware/kernel.") == 0)
+        return "No disponible en este hardware/kernel.";
+    if (strcmp(detail_en,
+               "power-profiles-daemon active; powergov skips platform_profile.") == 0)
+        return "power-profiles-daemon activo; powergov omite platform_profile.";
+    if (strcmp(detail_en, "Available; driver may impose a frequency floor.") == 0)
+        return "Disponible; el driver puede imponer piso de frecuencia.";
+    if (strcmp(detail_en, "PCI/USB; effect depends on each device.") == 0)
+        return "PCI/USB; efecto depende de cada dispositivo.";
+    if (strcmp(detail_en, "Sysfs present.") == 0)
+        return "Sysfs presente.";
+
+    return detail_en;
+}
+
+void pg_compat_format_summary(int supported, int partial, int total,
+                              char *buf, size_t bufsz)
+{
+    if (!buf || bufsz == 0)
+        return;
+
+    snprintf(buf, bufsz, pg_tr(PG_TR_COMPAT_SUMMARY_FMT),
+             supported, partial, total);
+}
+
+const char *pg_core_dev_text_tr(const char *text_en)
+{
+    char expect[128];
+    const char *path;
+
+    if (!text_en || !text_en[0])
+        return text_en;
+
+    if (pg_i18n_is_english())
+        return text_en;
+
+    if (strcmp(text_en, "(no metrics)") == 0)
+        return pg_tr(PG_TR_CORE_NO_METRICS);
+
+    path = POWERGOV_LOG_PATH;
+    snprintf(expect, sizeof(expect), "Could not read %s", path);
+    if (strcmp(text_en, expect) == 0)
+    {
+        static char log_fail[160];
+        snprintf(log_fail, sizeof(log_fail), pg_tr(PG_TR_CORE_LOG_READ_FAIL),
+                 path);
+        return log_fail;
+    }
+
+    return text_en;
 }

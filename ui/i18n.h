@@ -1,10 +1,11 @@
 /*
- * i18n.h - UI strings (English default, Spanish optional)
+ * i18n.h - UI strings (English default; Spanish if system locale is es*)
  * Copyright (C) 2026 Iván Ezequiel Rodriguez
  * License: GPLv3+
  */
 #pragma once
 
+#include <stddef.h>
 #include <powergov/client.h>
 
 typedef enum
@@ -20,6 +21,7 @@ typedef enum
     PG_TR_BTN_DEV_MODE,
     PG_TR_BTN_USER_MODE,
     PG_TR_BTN_START_SERVICE,
+    PG_TR_BTN_INSTALL_SERVICE,
     PG_TR_BTN_STOP,
     PG_TR_BTN_RESTART,
     PG_TR_LABEL_BATTERY_PROTECT,
@@ -27,6 +29,7 @@ typedef enum
     PG_TR_DEV_LOCK_BANNER,
     PG_TR_STATUS_NO_RESPOND,
     PG_TR_STATUS_NOT_RUNNING,
+    PG_TR_STATUS_NOT_INSTALLED,
     PG_TR_STATUS_READ_ERROR,
     PG_TR_STATUS_ACTIVE_PROFILE,
     PG_TR_POWER_PLUGGED,
@@ -67,15 +70,35 @@ typedef enum
     PG_TR_CPU_FMT,
     PG_TR_COMPAT_SCORE_FMT,
     PG_TR_COMPAT_ROW_FMT,
+    PG_TR_COMPAT_SUMMARY_FMT,
+    PG_TR_COMPAT_ST_UNSUPPORTED,
+    PG_TR_COMPAT_ST_SUPPORTED,
+    PG_TR_COMPAT_ST_PARTIAL,
+    PG_TR_COMPAT_ST_CONFLICT,
+    PG_TR_CORE_NO_METRICS,
+    PG_TR_CORE_LOG_READ_FAIL,
     PG_TR_YES,
     PG_TR_NO,
     PG_TR_ACTIVE,
     PG_TR_INACTIVE,
     PG_TR_LANG_TOOLTIP,
+    PG_TR_INSTALL_DIALOG_TITLE,
+    PG_TR_INSTALL_DIALOG_BODY,
+    PG_TR_INSTALL_DIALOG_YES,
+    PG_TR_INSTALL_DIALOG_NO,
+    PG_TR_ERR_SERVICE_NOT_RUNNING,
+    PG_TR_ERR_INSTALL_UNAVAILABLE,
+    PG_TR_ERR_INSTALL_FAILED,
+    PG_TR_ERR_INSTALL_DENIED,
+    PG_TR_LOG_INSTALL_STARTED,
+    PG_TR_LOG_INSTALL_OK,
+    PG_TR_FB_INSTALL_OK,
+    PG_TR_LOG_LANG_AUTO,
     PG_TR_COUNT
 } PgTr;
 
 void pg_i18n_init(void);
+void pg_i18n_format_startup_log(char *buf, size_t bufsz);
 int pg_i18n_is_english(void);
 void pg_i18n_set_english(int english);
 void pg_i18n_toggle(void);
@@ -85,5 +108,10 @@ const char *pg_tr(PgTr id);
 const char *pg_user_mode_title(powergov_user_mode_t mode);
 const char *pg_user_mode_subtitle(powergov_user_mode_t mode);
 const char *pg_service_action_label(const char *systemctl_action);
+const char *pg_compat_state_label(int state);
+const char *pg_compat_detail_tr(const char *detail_en);
+void pg_compat_format_summary(int supported, int partial, int total,
+                              char *buf, size_t bufsz);
+const char *pg_core_dev_text_tr(const char *text_en);
 
 #define _(id) pg_tr(id)

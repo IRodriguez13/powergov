@@ -18,6 +18,18 @@
     <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
   </action>
 
+  <action id="org.powergov.install-service">
+    <description>Instalar el servicio residente de powergov</description>
+    <message>Se requiere autenticación de administrador para instalar el servicio PowerGov</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/libexec/powergov/install-service-resident.sh</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
   <action id="org.powergov.dev-mode">
     <description>Ver diagnóstico técnico y logs de powergov</description>
     <message>Se requiere autenticación de administrador para el modo desarrollador</message>

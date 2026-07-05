@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Build a portable AppImage for powergov-ui (GTK client).
-# Requires a running powergov daemon (install once via install-powergov.sh).
+# Maintainer-only: build a precompiled AppImage for end users.
+# Users download the .AppImage from GitHub Releases — they do not run this script.
+# First launch: UI prompts to install the background service (pkexec, one-time).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -35,8 +36,11 @@ fetch_tool() {
     chmod +x "${dest}"
 }
 
-echo "==> build powergov-ui + libpowergov.so"
+echo "==> build powergov-ui + libpowergov.so + install staging"
 make -s libpowergov.so powergov-ui
+STAGING="${ROOT}/.staging/appimage"
+chmod +x scripts/prepare-install-staging.sh scripts/install-service-resident.sh
+./scripts/prepare-install-staging.sh "${STAGING}"
 
 echo "==> fetch linuxdeploy (cached in .build/appimage/)"
 fetch_tool \
@@ -51,8 +55,13 @@ export PATH="${CACHE}:${PATH}"
 
 echo "==> prepare AppDir"
 rm -rf "${APPDIR}"
-mkdir -p "${APPDIR}/usr/bin"
+mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/lib/powergov/staging" \
+    "${APPDIR}/usr/libexec/powergov"
 cp "${ROOT}/powergov-ui" "${ROOT}/libpowergov.so" "${APPDIR}/usr/bin/"
+cp -a "${STAGING}/." "${APPDIR}/usr/lib/powergov/staging/"
+cp "${ROOT}/scripts/install-service-resident.sh" \
+    "${APPDIR}/usr/libexec/powergov/install-service-resident.sh"
+chmod +x "${APPDIR}/usr/libexec/powergov/install-service-resident.sh"
 
 cat > "${DESKTOP}" <<EOF
 [Desktop Entry]
@@ -92,4 +101,4 @@ mv -f PowerGov-"${VERSION}"-x86_64.AppImage "${OUT}" 2>/dev/null || \
 chmod +x "${OUT}"
 
 echo "==> ${OUT}"
-echo "note: AppImage runs the UI only; install the daemon once with ./install-powergov.sh"
+echo "note: ship this file in GitHub Releases; end users run it directly (no compile wait)"

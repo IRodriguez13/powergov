@@ -37,6 +37,8 @@ POLKIT_POLICY = data/org.powergov.policy
 POLKIT_DIR = /usr/share/polkit-1/actions
 DEV_AUTH = scripts/powergov-dev-auth
 LIBEXEC_DIR = /usr/local/libexec/powergov
+INSTALL_HELPER = scripts/install-service-resident.sh
+STAGING_DIR = .staging/install
 CONF_DIR = /etc
 CONF_FILE = $(CONF_DIR)/powergov.conf
 SYSTEMD_UNIT = /etc/systemd/system/powergov.service
@@ -122,6 +124,14 @@ install-ui-desktop:
 
 install-ui-helper:
 	install -D -m 755 $(DEV_AUTH) $(LIBEXEC_DIR)/dev-auth
+	install -D -m 755 $(INSTALL_HELPER) $(LIBEXEC_DIR)/install-service-resident.sh
+	@$(MAKE) staging
+	install -D -m 755 $(STAGING_DIR)/powergov $(LIBEXEC_DIR)/staging/powergov
+	install -D -m 755 $(STAGING_DIR)/libpowergov.so $(LIBEXEC_DIR)/staging/libpowergov.so
+	install -D -m 644 $(STAGING_DIR)/powergov.conf $(LIBEXEC_DIR)/staging/powergov.conf
+	install -D -m 644 $(STAGING_DIR)/powergov.service $(LIBEXEC_DIR)/staging/powergov.service
+	install -D -m 644 $(STAGING_DIR)/org.powergov.policy $(LIBEXEC_DIR)/staging/org.powergov.policy
+	install -D -m 755 $(STAGING_DIR)/dev-auth $(LIBEXEC_DIR)/staging/dev-auth
 
 install-ui-policy:
 	install -D -m 644 $(POLKIT_POLICY) $(POLKIT_DIR)/org.powergov.policy
@@ -145,9 +155,14 @@ install-completion:
 install-service: install
 	install -D -m 644 config/powergov.conf $(CONF_FILE)
 	install -D -m 644 service/powergov.service $(SYSTEMD_UNIT)
+	@$(MAKE) install-ui-helper install-ui-policy
 	systemctl daemon-reload
 	systemctl enable powergov.service
 	systemctl restart powergov.service
+
+staging:
+	@chmod +x scripts/prepare-install-staging.sh
+	@./scripts/prepare-install-staging.sh $(STAGING_DIR)
 
 stop:
 	-@if command -v systemctl >/dev/null 2>&1 && systemctl is-active powergov.service >/dev/null 2>&1; then \
@@ -212,7 +227,8 @@ ui-run: $(UI_BIN)
 
 APPIMAGE = dist/PowerGov-$(VERSION)-x86_64.AppImage
 
-.PHONY: all install install-bin install-man install-completion install-service install-lib install-ui install-ui-helper install-ui-policy install-ui-icons install-ui-desktop install-ui-shortcut icons appimage stop uninstall uninstall-docs uninstall-service service-status pack extract release ui ui-run clean
+.PHONY: all install install-bin install-man install-completion install-service install-lib install-ui install-ui-helper install-ui-policy install-ui-icons install-ui-desktop install-ui-shortcut icons appimage staging stop uninstall uninstall-docs uninstall-service service-status pack extract release ui ui-run clean
 
 clean:
 	rm -f $(OBJ) client/libpowergov.o include/powergov/types_lib.o $(TARGET) $(LIBPOWERGOV) $(UI_BIN)
+	rm -rf .staging

@@ -1,6 +1,8 @@
 #!/bin/sh
-# AppImage entry: bundled GTK UI + icons; daemon must be installed separately.
+# AppImage entry: GTK UI + optional in-app service install via pkexec.
 APPDIR="$(dirname "$(readlink -f "$0")")"
 export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${LD_LIBRARY_PATH:-}"
 export POWERGOV_ICON_ROOT="${APPDIR}/usr/share/icons/hicolor"
+export POWERGOV_INSTALL_STAGING="${APPDIR}/usr/lib/powergov/staging"
+export POWERGOV_INSTALL_HELPER="${APPDIR}/usr/libexec/powergov/install-service-resident.sh"
 exec "${APPDIR}/usr/bin/powergov-ui" "$@"

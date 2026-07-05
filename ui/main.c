@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <limits.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -20,8 +21,15 @@
 #define DEV_LOG_UI_MAX_LINES 500
 #define POLKIT_DEV_MODE      "org.powergov.dev-mode"
 #define POLKIT_MANAGE_SVC    "org.powergov.manage-service"
+#define POLKIT_INSTALL_SVC   "org.powergov.install-service"
 #define POWERGOV_PKEXEC      "/usr/bin/pkexec"
 #define POWERGOV_DEV_AUTH    "/usr/local/libexec/powergov/dev-auth"
+#define POWERGOV_INSTALL_HELPER \
+    "/usr/local/libexec/powergov/install-service-resident.sh"
+#define POWERGOV_INSTALL_STAGING_DEFAULT \
+    "/usr/local/libexec/powergov/staging"
+#define POWERGOV_STAGING_REL     ".staging/install"
+#define POWERGOV_STAGING_NAME      "powergov"
 #ifndef POWERGOV_ICON_ROOT
 #define POWERGOV_ICON_ROOT   "/usr/share/icons/hicolor"
 #endif
@@ -39,6 +47,7 @@ typedef struct
     AppCtx *ctx;
     int daemon_up;
     int systemd_active;
+    int service_installed;
     int fetch_dev;
     int st_ok;
     int sys_ok;
@@ -97,7 +106,10 @@ struct _AppCtx
     guint feedback_timeout_id;
     gulong battery_sw_handler;
     int daemon_up;
+    int service_installed;
     int dev_unlocked;
+    int install_busy;
+    int startup_prompt_done;
     int dev_log_initialized;
     int metrics_initialized;
     int refresh_busy;
@@ -121,6 +133,196 @@ static int pidfile_daemon_alive(void)
     }
     fclose(f);
     return (pid > 0 && kill((pid_t)pid, 0) == 0);
+}
+
+static int powergov_service_installed(void)
+{
+    if (access("/etc/systemd/system/powergov.service", F_OK) == 0)
+        return 1;
+    if (access("/usr/local/bin/powergov", F_OK) == 0)
+        return 1;
+    return 0;
+}
+
+static int read_self_dir(char *buf, size_t len)
+{
+    ssize_t n;
+
+    if (!buf || len == 0)
+        return 0;
+
+    n = readlink("/proc/self/exe", buf, len - 1);
+    if (n <= 0)
+        return 0;
+
+    buf[n] = '\0';
+    {
+        char *slash = strrchr(buf, '/');
+        if (slash)
+            *slash = '\0';
+        else
+            return 0;
+    }
+    return 1;
+}
+
+static int staging_has_daemon(const char *dir)
+{
+    char path[512];
+
+    if (!dir || !dir[0])
+        return 0;
+
+    snprintf(path, sizeof(path), "%s/%s", dir, POWERGOV_STAGING_NAME);
+    return access(path, X_OK) == 0;
+}
+
+/* pkexec runs as root with another cwd — staging/helper must be absolute. */
+static int canonical_existing_path(const char *in, char *out, size_t outsz)
+{
+    char joined[PATH_MAX];
+    char *resolved;
+    const char *probe;
+    int ok;
+
+    if (!in || !in[0] || !out || outsz == 0)
+        return 0;
+
+    if (in[0] == '/')
+    {
+        probe = in;
+    }
+    else
+    {
+        char cwd[PATH_MAX];
+
+        if (!getcwd(cwd, sizeof(cwd)))
+            return 0;
+        if (snprintf(joined, sizeof(joined), "%s/%s", cwd, in) >=
+            (int)sizeof(joined))
+            return 0;
+        probe = joined;
+    }
+
+    resolved = realpath(probe, NULL);
+    if (!resolved)
+        return 0;
+
+    ok = 0;
+    if (strlen(resolved) + 1 <= outsz)
+    {
+        snprintf(out, outsz, "%s", resolved);
+        ok = 1;
+    }
+
+    free(resolved);
+    return ok;
+}
+
+static int try_staging_candidate(const char *candidate, char *out, size_t outsz)
+{
+    char abs[512];
+
+    if (!candidate || !candidate[0])
+        return 0;
+
+    if (!canonical_existing_path(candidate, abs, sizeof(abs)))
+        return 0;
+
+    if (!staging_has_daemon(abs))
+        return 0;
+
+    snprintf(out, outsz, "%s", abs);
+    return 1;
+}
+
+static int try_helper_candidate(const char *candidate, char *out, size_t outsz)
+{
+    char abs[512];
+
+    if (!candidate || !candidate[0])
+        return 0;
+
+    if (!canonical_existing_path(candidate, abs, sizeof(abs)))
+        return 0;
+
+    if (access(abs, X_OK) != 0)
+        return 0;
+
+    snprintf(out, outsz, "%s", abs);
+    return 1;
+}
+
+static int resolve_install_staging(char *out, size_t outsz)
+{
+    const char *env;
+    char self_dir[512];
+    char path[512];
+
+    if (!out || outsz == 0)
+        return 0;
+
+    env = getenv("POWERGOV_INSTALL_STAGING");
+    if (env && try_staging_candidate(env, out, outsz))
+        return 1;
+
+    if (try_staging_candidate(POWERGOV_INSTALL_STAGING_DEFAULT, out, outsz))
+        return 1;
+
+    if (read_self_dir(self_dir, sizeof(self_dir)))
+    {
+        snprintf(path, sizeof(path), "%s/../lib/powergov/staging", self_dir);
+        if (try_staging_candidate(path, out, outsz))
+            return 1;
+    }
+
+    if (try_staging_candidate(POWERGOV_STAGING_REL, out, outsz))
+        return 1;
+
+    return 0;
+}
+
+static int resolve_install_helper(char *out, size_t outsz)
+{
+    const char *env;
+    char self_dir[512];
+    char path[512];
+
+    if (!out || outsz == 0)
+        return 0;
+
+    env = getenv("POWERGOV_INSTALL_HELPER");
+    if (env && try_helper_candidate(env, out, outsz))
+        return 1;
+
+    if (try_helper_candidate(POWERGOV_INSTALL_HELPER, out, outsz))
+        return 1;
+
+    if (read_self_dir(self_dir, sizeof(self_dir)))
+    {
+        snprintf(path, sizeof(path),
+                 "%s/../libexec/powergov/install-service-resident.sh",
+                 self_dir);
+        if (try_helper_candidate(path, out, outsz))
+            return 1;
+    }
+
+    if (try_helper_candidate("scripts/install-service-resident.sh", out, outsz))
+        return 1;
+
+    return 0;
+}
+
+static void start_install_async(AppCtx *ctx);
+static int prompt_install_service(AppCtx *ctx);
+static int ensure_daemon_for_action(AppCtx *ctx);
+static void refresh_async(AppCtx *ctx);
+static void update_service_buttons(AppCtx *ctx, int systemd_active);
+
+static gboolean refresh_async_idle(gpointer data)
+{
+    refresh_async((AppCtx *)data);
+    return G_SOURCE_REMOVE;
 }
 
 static int dev_mode_active(const AppCtx *ctx)
@@ -545,6 +747,134 @@ static void clear_dev_views(AppCtx *ctx)
     ctx->metrics_last_snapshot[0] = '\0';
 }
 
+static void install_child_exit(GPid pid, gint status, gpointer data)
+{
+    AppCtx *ctx = data;
+    GError *err = NULL;
+
+    g_spawn_close_pid(pid);
+    ctx->install_busy = 0;
+    update_service_buttons(ctx, ctx->daemon_up);
+
+    if (g_spawn_check_wait_status(status, &err))
+    {
+        ctx->service_installed = 1;
+        append_action_log(ctx, _(PG_TR_LOG_INSTALL_OK));
+        show_feedback(ctx, 1, _(PG_TR_FB_INSTALL_OK));
+        g_timeout_add(1500, refresh_async_idle, ctx);
+        g_clear_error(&err);
+        return;
+    }
+
+    show_feedback(ctx, 0, _(PG_TR_ERR_INSTALL_DENIED));
+    append_action_log(ctx, _(PG_TR_ERR_INSTALL_DENIED));
+    g_clear_error(&err);
+}
+
+static void start_install_async(AppCtx *ctx)
+{
+    char helper[512];
+    char staging[512];
+    char *argv[4];
+    GError *err = NULL;
+    GPid pid;
+
+    (void)POLKIT_INSTALL_SVC;
+
+    if (ctx->install_busy)
+        return;
+
+    if (!resolve_install_helper(helper, sizeof(helper)) ||
+        !resolve_install_staging(staging, sizeof(staging)))
+    {
+        show_feedback(ctx, 0, _(PG_TR_ERR_INSTALL_UNAVAILABLE));
+        append_action_log(ctx, _(PG_TR_ERR_INSTALL_UNAVAILABLE));
+        return;
+    }
+
+    if (access(POWERGOV_PKEXEC, X_OK) != 0)
+    {
+        show_feedback(ctx, 0, _(PG_TR_ERR_DEV_NO_PKEXEC));
+        return;
+    }
+
+    argv[0] = (char *)POWERGOV_PKEXEC;
+    argv[1] = helper;
+    argv[2] = staging;
+    argv[3] = NULL;
+
+    if (!g_spawn_async(NULL, argv, NULL,
+                       G_SPAWN_DO_NOT_REAP_CHILD,
+                       NULL, NULL, &pid, &err))
+    {
+        show_feedback(ctx, 0, _(PG_TR_ERR_INSTALL_FAILED));
+        g_clear_error(&err);
+        return;
+    }
+
+    ctx->install_busy = 1;
+    update_service_buttons(ctx, ctx->daemon_up);
+    append_action_log(ctx, _(PG_TR_LOG_INSTALL_STARTED));
+    g_child_watch_add(pid, install_child_exit, ctx);
+}
+
+static int prompt_install_service(AppCtx *ctx)
+{
+    GtkWidget *dlg;
+    int response;
+
+    dlg = gtk_message_dialog_new(
+        GTK_WINDOW(ctx->window),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        GTK_MESSAGE_QUESTION,
+        GTK_BUTTONS_NONE,
+        "%s",
+        _(PG_TR_INSTALL_DIALOG_TITLE));
+    gtk_message_dialog_format_secondary_text(
+        GTK_MESSAGE_DIALOG(dlg), "%s", _(PG_TR_INSTALL_DIALOG_BODY));
+    gtk_dialog_add_button(GTK_DIALOG(dlg), _(PG_TR_INSTALL_DIALOG_NO),
+                          GTK_RESPONSE_NO);
+    gtk_dialog_add_button(GTK_DIALOG(dlg), _(PG_TR_INSTALL_DIALOG_YES),
+                          GTK_RESPONSE_YES);
+    gtk_dialog_set_default_response(GTK_DIALOG(dlg), GTK_RESPONSE_YES);
+
+    response = gtk_dialog_run(GTK_DIALOG(dlg));
+    gtk_widget_destroy(dlg);
+
+    if (response == GTK_RESPONSE_YES)
+    {
+        start_install_async(ctx);
+        return 1;
+    }
+
+    return 0;
+}
+
+static int ensure_daemon_for_action(AppCtx *ctx)
+{
+    if (ctx->daemon_up)
+        return 1;
+
+    if (ctx->service_installed)
+    {
+        show_feedback(ctx, 0, _(PG_TR_ERR_SERVICE_NOT_RUNNING));
+        return 0;
+    }
+
+    return prompt_install_service(ctx);
+}
+
+static gboolean startup_install_prompt_idle(gpointer data)
+{
+    AppCtx *ctx = data;
+
+    if (!ctx || ctx->daemon_up || ctx->service_installed)
+        return G_SOURCE_REMOVE;
+
+    prompt_install_service(ctx);
+    return G_SOURCE_REMOVE;
+}
+
 static void run_polkit_service(AppCtx *ctx, const char *action)
 {
     char cmd[256];
@@ -579,11 +909,18 @@ static void set_mode_sensitive(AppCtx *ctx, int sensitive)
 static void update_service_buttons(AppCtx *ctx, int systemd_active)
 {
     int dev = dev_mode_active(ctx);
+    const char *primary = ctx->service_installed
+                              ? _(PG_TR_BTN_START_SERVICE)
+                              : _(PG_TR_BTN_INSTALL_SERVICE);
 
     gtk_widget_set_visible(ctx->service_box, dev || !ctx->daemon_up);
+    gtk_button_set_label(GTK_BUTTON(ctx->start_btn), primary);
     gtk_widget_set_visible(ctx->stop_btn, dev);
     gtk_widget_set_visible(ctx->restart_btn, dev);
-    gtk_widget_set_sensitive(ctx->start_btn, !systemd_active);
+    if (ctx->service_installed)
+        gtk_widget_set_sensitive(ctx->start_btn, !systemd_active);
+    else
+        gtk_widget_set_sensitive(ctx->start_btn, !ctx->install_busy);
     gtk_widget_set_sensitive(ctx->stop_btn, systemd_active);
     gtk_widget_set_sensitive(ctx->restart_btn, systemd_active);
 }
@@ -621,18 +958,32 @@ static void apply_dev_panels(AppCtx *ctx, const UiSnapshot *s)
 
     if (s->compat_ok)
     {
+        char summary[128];
+        int supported = 0;
+        int partial = 0;
+
         block[0] = '\0';
+        for (i = 0; i < POWERGOV_FEATURE_COUNT; i++)
+        {
+            if (s->compat.rows[i].state == POWERGOV_COMPAT_SUPPORTED)
+                supported++;
+            else if (s->compat.rows[i].state == POWERGOV_COMPAT_PARTIAL)
+                partial++;
+        }
+
+        pg_compat_format_summary(supported, partial, POWERGOV_FEATURE_COUNT,
+                                 summary, sizeof(summary));
         snprintf(line, sizeof(line), _(PG_TR_COMPAT_SCORE_FMT),
-                 s->compat.adaptability_score, s->compat.summary);
+                 s->compat.adaptability_score, summary);
         strncat(block, line, sizeof(block) - strlen(block) - 1);
         for (i = 0; i < POWERGOV_FEATURE_COUNT; i++)
         {
             snprintf(line, sizeof(line), _(PG_TR_COMPAT_ROW_FMT),
                      s->compat.rows[i].name,
-                     powergov_compat_state_str(s->compat.rows[i].state),
+                     pg_compat_state_label(s->compat.rows[i].state),
                      s->compat.rows[i].hw_available,
                      s->compat.rows[i].enabled,
-                     s->compat.rows[i].detail);
+                     pg_compat_detail_tr(s->compat.rows[i].detail));
             strncat(block, line, sizeof(block) - strlen(block) - 1);
         }
         fill_text_view(ctx->compat_view, block);
@@ -640,7 +991,8 @@ static void apply_dev_panels(AppCtx *ctx, const UiSnapshot *s)
 
     if (s->metrics_ok)
     {
-        update_panel_text_view(ctx->metrics_view, s->metrics.text,
+        update_panel_text_view(ctx->metrics_view,
+                               pg_core_dev_text_tr(s->metrics.text),
                                ctx->metrics_last_snapshot,
                                sizeof(ctx->metrics_last_snapshot),
                                &ctx->metrics_initialized);
@@ -651,7 +1003,13 @@ static void apply_dev_panels(AppCtx *ctx, const UiSnapshot *s)
         if (s->log.ok)
             update_dev_log_view(ctx, s->log.text);
         else if (!ctx->dev_log_initialized)
-            update_dev_log_view(ctx, _(PG_TR_NO_LOG));
+        {
+            const char *msg = s->log.text[0]
+                                    ? pg_core_dev_text_tr(s->log.text)
+                                    : _(PG_TR_NO_LOG);
+
+            update_dev_log_view(ctx, msg);
+        }
     }
 }
 
@@ -661,19 +1019,31 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
     int i;
 
     ctx->daemon_up = s->daemon_up;
+    ctx->service_installed = s->service_installed;
     ctx->refresh_busy = 0;
 
     if (!s->daemon_up)
     {
-        gtk_label_set_text(GTK_LABEL(ctx->status_label),
-                           s->systemd_active
-                               ? _(PG_TR_STATUS_NO_RESPOND)
-                               : _(PG_TR_STATUS_NOT_RUNNING));
+        const char *status = _(PG_TR_STATUS_NOT_RUNNING);
+
+        if (!s->service_installed)
+            status = _(PG_TR_STATUS_NOT_INSTALLED);
+        else if (s->systemd_active)
+            status = _(PG_TR_STATUS_NO_RESPOND);
+
+        gtk_label_set_text(GTK_LABEL(ctx->status_label), status);
         gtk_label_set_text(GTK_LABEL(ctx->power_label), "");
         set_mode_sensitive(ctx, FALSE);
         update_service_buttons(ctx, s->systemd_active);
         if (!dev_mode_active(ctx))
             clear_dev_views(ctx);
+
+        if (!s->service_installed && !ctx->startup_prompt_done)
+        {
+            ctx->startup_prompt_done = 1;
+            g_idle_add(startup_install_prompt_idle, ctx);
+        }
+
         g_free(s);
         return;
     }
@@ -745,6 +1115,8 @@ static void snapshot_worker(GTask *task, gpointer source, gpointer data,
     (void)source;
     (void)data;
     (void)cancel;
+
+    s->service_installed = powergov_service_installed();
 
     if (s->fetch_dev)
     {
@@ -1033,6 +1405,12 @@ static void on_mode_toggled(GtkToggleButton *btn, gpointer data)
     if (ctx->ui_sync || !gtk_toggle_button_get_active(btn))
         return;
 
+    if (!ensure_daemon_for_action(ctx))
+    {
+        refresh_async(ctx);
+        return;
+    }
+
     r = g_new0(UiActionResult, 1);
     r->kind = UI_ACT_SET_MODE;
     r->mode = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(btn), "mode"));
@@ -1047,6 +1425,12 @@ static void apply_battery_setting(AppCtx *ctx)
 
     if (ctx->ui_sync)
         return;
+
+    if (!ensure_daemon_for_action(ctx))
+    {
+        refresh_async(ctx);
+        return;
+    }
 
     thr = (int)gtk_range_get_value(GTK_RANGE(ctx->battery_scale));
     on = gtk_switch_get_active(GTK_SWITCH(ctx->battery_switch));
@@ -1097,13 +1481,25 @@ static void on_dev_btn_clicked(GtkButton *btn, gpointer data)
         return;
     }
 
+    if (!ensure_daemon_for_action(ctx))
+        return;
+
     start_dev_auth_async(ctx);
 }
 
 static void on_service_start(GtkButton *b, gpointer data)
 {
+    AppCtx *ctx = data;
+
     (void)b;
-    run_polkit_service(data, "start");
+
+    if (!ctx->service_installed)
+    {
+        prompt_install_service(ctx);
+        return;
+    }
+
+    run_polkit_service(ctx, "start");
 }
 
 static void on_service_stop(GtkButton *b, gpointer data)
@@ -1251,7 +1647,10 @@ static void refresh_ui_language(AppCtx *ctx)
         gtk_widget_set_tooltip_text(ctx->lang_btn, pg_lang_button_tooltip());
     }
 
-    gtk_button_set_label(GTK_BUTTON(ctx->start_btn), _(PG_TR_BTN_START_SERVICE));
+    gtk_button_set_label(GTK_BUTTON(ctx->start_btn),
+                         ctx->service_installed
+                             ? _(PG_TR_BTN_START_SERVICE)
+                             : _(PG_TR_BTN_INSTALL_SERVICE));
     gtk_button_set_label(GTK_BUTTON(ctx->stop_btn), _(PG_TR_BTN_STOP));
     gtk_button_set_label(GTK_BUTTON(ctx->restart_btn), _(PG_TR_BTN_RESTART));
     update_dev_tab_access(ctx);
@@ -1458,6 +1857,13 @@ int main(int argc, char **argv)
     gtk_init(&argc, &argv);
     apply_ui_theme();
     build_ui(&ctx);
+    {
+        char lang_log[160];
+
+        pg_i18n_format_startup_log(lang_log, sizeof(lang_log));
+        append_action_log(&ctx, lang_log);
+        fprintf(stderr, "powergov-ui: %s\n", lang_log);
+    }
     refresh_async(&ctx);
     ctx.timer_id = g_timeout_add(REFRESH_MS, on_timer, &ctx);
     gtk_widget_show_all(ctx.window);

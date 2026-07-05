@@ -31,11 +31,17 @@ fi
 NOTES="$(cat <<EOF
 ## powergov ${VERSION}
 
-- **Instalador de doble clic**: extraé el tarball y abrí \`Install-PowerGov.desktop\` (o \`./install-powergov.sh\`).
-- **AppImage opcional** (\`PowerGov-${VERSION}-x86_64.AppImage\`): UI portable; requiere el daemon instalado una vez.
-- UI GTK EN/ES, acceso directo, log/métricas sin saltos de scroll.
+### Usuario final (recomendado): AppImage precompilado
 
-### Instalación completa (recomendada, primera vez)
+1. Descargá \`PowerGov-${VERSION}-x86_64.AppImage\`
+2. \`chmod +x PowerGov-${VERSION}-x86_64.AppImage && ./PowerGov-${VERSION}-x86_64.AppImage\`
+3. En el **primer arranque**, la UI detecta el idioma del sistema (es → español; resto → inglés) y pregunta si instalar el servicio en segundo plano.
+4. Si aceptás, se pide contraseña de administrador **una vez** y queda todo el backend (systemd + daemon) listo.
+5. Si no aceptás, cualquier acción que requiera el servicio vuelve a preguntar.
+
+**No hace falta compilar nada** para usar el AppImage.
+
+### Instalación desde código fuente (tarball)
 
 \`\`\`bash
 tar -xzf powergov-${VERSION}.tar.gz
@@ -43,11 +49,12 @@ cd powergov-${VERSION}
 ./install-powergov.sh
 \`\`\`
 
-### Solo UI portable (AppImage)
+Requiere: \`build-essential pkg-config libgtk-3-dev zenity\`.
 
-Tras instalar el servicio una vez, podés usar el AppImage como acceso directo a la UI sin recompilar.
+### Notas
 
-Requiere build deps para el tarball: \`build-essential pkg-config libgtk-3-dev zenity\`.
+- UI GTK con idioma automático (LANG/LC_MESSAGES del sistema) + botón EN/ES.
+- \`make appimage\` es solo para quien publica releases (tarda ~2 min); los usuarios descargan el binario ya empaquetado.
 EOF
 )"
 

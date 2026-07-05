@@ -258,7 +258,7 @@ void powergov_info_fill_compat(const powergov_config_t *cfg,
     {
         int hw = feature_hw(i);
         int st = POWERGOV_COMPAT_UNSUPPORTED;
-        const char *detail = "No disponible en este hardware/kernel.";
+        const char *detail = "Not available on this hardware/kernel.";
 
         out->rows[i].hw_available = hw;
         out->rows[i].enabled = (mask >> i) & 1;
@@ -268,24 +268,24 @@ void powergov_info_fill_compat(const powergov_config_t *cfg,
         if (i == POWERGOV_FEATURE_PLATFORM && platform_ppd_active())
         {
             st = POWERGOV_COMPAT_CONFLICT;
-            detail = "power-profiles-daemon activo; powergov omite platform_profile.";
+            detail = "power-profiles-daemon active; powergov skips platform_profile.";
         }
         else if (i == POWERGOV_FEATURE_FREQ_CAP && hw)
         {
             st = POWERGOV_COMPAT_PARTIAL;
-            detail = "Disponible; el driver puede imponer piso de frecuencia.";
+            detail = "Available; driver may impose a frequency floor.";
             partial++;
         }
         else if (i == POWERGOV_FEATURE_RUNTIME_PM && hw)
         {
             st = POWERGOV_COMPAT_PARTIAL;
-            detail = "PCI/USB; efecto depende de cada dispositivo.";
+            detail = "PCI/USB; effect depends on each device.";
             partial++;
         }
         else if (hw)
         {
             st = POWERGOV_COMPAT_SUPPORTED;
-            detail = "Sysfs presente.";
+            detail = "Sysfs present.";
             supported++;
         }
 
@@ -295,7 +295,7 @@ void powergov_info_fill_compat(const powergov_config_t *cfg,
 
     out->adaptability_score = (supported * 100 + partial * 50) / POWERGOV_FEATURE_COUNT;
     snprintf(out->summary, sizeof(out->summary),
-             "%d subsistemas soportados, %d parciales, de %d totales.",
+             "%d subsystems supported, %d partial, of %d total.",
              supported, partial, POWERGOV_FEATURE_COUNT);
 }
 
@@ -310,7 +310,7 @@ void powergov_info_fill_metrics(powergov_reply_metrics_t *out)
     f = fopen(POWERGOV_METRICS_PATH, "r");
     if (!f)
     {
-        safe_copy(out->text, sizeof(out->text), "(sin métricas)");
+        safe_copy(out->text, sizeof(out->text), "(no metrics)");
         return;
     }
 
@@ -343,7 +343,7 @@ void powergov_info_fill_log(int lines, powergov_reply_log_t *out)
     {
         out->ok = 0;
         snprintf(out->text, sizeof(out->text),
-                 "No se pudo leer %s", POWERGOV_LOG_PATH);
+                 "Could not read %s", POWERGOV_LOG_PATH);
         return;
     }
 
