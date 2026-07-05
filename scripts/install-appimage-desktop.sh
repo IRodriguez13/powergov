@@ -86,11 +86,23 @@ install_desktop_shortcut() {
 DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 APPL_DIR="${DATA_HOME}/applications"
 ICON_ROOT="${DATA_HOME}/icons/hicolor"
+CANONICAL_DIR="${DATA_HOME}/powergov"
+CANONICAL="${CANONICAL_DIR}/PowerGov.AppImage"
 DESKTOP_FILE="${APPL_DIR}/powergov-ui.desktop"
 CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}/powergov"
 MARKER="${CONFIG_DIR}/appimage-desktop"
 
 mkdir -p "${CONFIG_DIR}"
+
+# Prefer a single install location; migrate shortcuts from a download-folder copy.
+if [[ -f "${APPIMAGE}" && "${APPIMAGE}" != "${CANONICAL}" ]]; then
+    mkdir -p "${CANONICAL_DIR}"
+    if [[ ! -f "${CANONICAL}" ]]; then
+        cp -f "${APPIMAGE}" "${CANONICAL}.part" && mv -f "${CANONICAL}.part" "${CANONICAL}"
+        chmod +x "${CANONICAL}"
+    fi
+    APPIMAGE="${CANONICAL}"
+fi
 
 if [[ -f "${MARKER}" && -f "${DESKTOP_FILE}" ]]; then
     if [[ "$(tr -d '[:space:]' < "${MARKER}")" == "${APPIMAGE}" ]]; then

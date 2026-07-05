@@ -45,7 +45,7 @@ NOTES="$(cat <<EOF
 
 ### Cambios en ${VERSION}
 
-- **Actualización in-app:** diálogo con «Ahora no», «Abrir descarga» e **«Instalar»** (descarga el AppImage nuevo en segundo plano y actualiza accesos directos).
+- **Actualización sin duplicados:** el AppImage se instala siempre en \`~/.local/share/powergov/PowerGov.AppImage\` (sobrescribe) y se eliminan copias versionadas antiguas en Descargas.
 
 ### Instalación desde código fuente (tarball)
 
