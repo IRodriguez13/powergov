@@ -41,4 +41,15 @@
     <annotate key="org.freedesktop.policykit.exec.path">/usr/local/libexec/powergov/dev-auth</annotate>
     <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
   </action>
+  <action id="org.powergov.uninstall">
+    <description>Desinstalar powergov y su servicio</description>
+    <message>Se requiere autenticación de administrador para desinstalar PowerGov</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/libexec/powergov/powergov-uninstall.sh</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
 </policyconfig>

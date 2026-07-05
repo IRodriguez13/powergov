@@ -218,7 +218,8 @@ release:
 
 appimage: $(UI_BIN) $(LIBPOWERGOV)
 	@chmod +x scripts/build-appimage.sh scripts/AppRun.appimage \
-		scripts/install-appimage-desktop.sh
+		scripts/install-appimage-desktop.sh scripts/powergov-uninstall.sh \
+		scripts/remove-appimage-user-files.sh
 	@./scripts/build-appimage.sh
 
 ui: $(UI_BIN)

@@ -16,3 +16,6 @@ install -m 644 "$ROOT/config/powergov.conf" "$OUT/powergov.conf"
 install -m 644 "$ROOT/service/powergov.service" "$OUT/powergov.service"
 install -m 644 "$ROOT/data/org.powergov.policy" "$OUT/org.powergov.policy"
 install -m 755 "$ROOT/scripts/powergov-dev-auth" "$OUT/dev-auth"
+install -m 755 "$ROOT/scripts/powergov-uninstall.sh" "$OUT/powergov-uninstall.sh"
+install -m 755 "$ROOT/scripts/remove-appimage-user-files.sh" \
+    "$OUT/remove-appimage-user-files.sh"

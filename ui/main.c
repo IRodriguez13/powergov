@@ -11,6 +11,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <limits.h>
+#include <sys/stat.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -28,6 +29,10 @@
     "/usr/local/libexec/powergov/install-service-resident.sh"
 #define POWERGOV_INSTALL_STAGING_DEFAULT \
     "/usr/local/libexec/powergov/staging"
+#define POWERGOV_UNINSTALL_HELPER \
+    "/usr/local/libexec/powergov/powergov-uninstall.sh"
+#define POWERGOV_USER_CLEANUP_HELPER \
+    "/usr/local/libexec/powergov/remove-appimage-user-files.sh"
 #define POWERGOV_STAGING_REL     ".staging/install"
 #define POWERGOV_STAGING_NAME      "powergov"
 #ifndef POWERGOV_ICON_ROOT
@@ -97,6 +102,7 @@ struct _AppCtx
     GtkWidget *start_btn;
     GtkWidget *stop_btn;
     GtkWidget *restart_btn;
+    GtkWidget *uninstall_btn;
     GtkWidget *sys_view;
     GtkWidget *cpu_view;
     GtkWidget *compat_view;
@@ -111,6 +117,7 @@ struct _AppCtx
     int service_installed;
     int dev_unlocked;
     int install_busy;
+    int uninstall_busy;
     int startup_prompt_done;
     int dev_log_initialized;
     int metrics_initialized;
@@ -316,6 +323,67 @@ static int resolve_install_helper(char *out, size_t outsz)
     return 0;
 }
 
+static int resolve_uninstall_helper(char *out, size_t outsz)
+{
+    const char *env;
+    char self_dir[512];
+    char path[512];
+
+    if (!out || outsz == 0)
+        return 0;
+
+    env = getenv("POWERGOV_UNINSTALL_HELPER");
+    if (env && try_helper_candidate(env, out, outsz))
+        return 1;
+
+    if (try_helper_candidate(POWERGOV_UNINSTALL_HELPER, out, outsz))
+        return 1;
+
+    if (read_self_dir(self_dir, sizeof(self_dir)))
+    {
+        snprintf(path, sizeof(path),
+                 "%s/../libexec/powergov/powergov-uninstall.sh", self_dir);
+        if (try_helper_candidate(path, out, outsz))
+            return 1;
+    }
+
+    if (try_helper_candidate("scripts/powergov-uninstall.sh", out, outsz))
+        return 1;
+
+    return 0;
+}
+
+static int resolve_user_cleanup_helper(char *out, size_t outsz)
+{
+    const char *env;
+    char self_dir[512];
+    char path[512];
+
+    if (!out || outsz == 0)
+        return 0;
+
+    env = getenv("POWERGOV_USER_CLEANUP_HELPER");
+    if (env && try_helper_candidate(env, out, outsz))
+        return 1;
+
+    if (try_helper_candidate(POWERGOV_USER_CLEANUP_HELPER, out, outsz))
+        return 1;
+
+    if (read_self_dir(self_dir, sizeof(self_dir)))
+    {
+        snprintf(path, sizeof(path),
+                 "%s/../libexec/powergov/remove-appimage-user-files.sh",
+                 self_dir);
+        if (try_helper_candidate(path, out, outsz))
+            return 1;
+    }
+
+    if (try_helper_candidate("scripts/remove-appimage-user-files.sh", out, outsz))
+        return 1;
+
+    return 0;
+}
+
 static void start_install_async(AppCtx *ctx);
 static int prompt_install_service(AppCtx *ctx);
 static int ensure_daemon_for_action(AppCtx *ctx);
@@ -425,6 +493,60 @@ static int materialize_install_bundle(AppCtx *ctx, const char *helper_src,
     snprintf(staging_dst, staging_dst_sz, "%s", staging_path);
     snprintf(ctx->install_tmpdir, sizeof(ctx->install_tmpdir), "%s", tmpdir);
     return 1;
+}
+
+static int materialize_uninstall_helper(AppCtx *ctx, const char *helper_src,
+                                        char *helper_dst, size_t helper_dst_sz)
+{
+    char tmpl[] = "/tmp/powergov-uninstall-XXXXXX";
+    char *tmpdir;
+    char helper_path[512];
+    char *cp_argv[4];
+
+    if (!path_on_appimage_mount(helper_src))
+    {
+        snprintf(helper_dst, helper_dst_sz, "%s", helper_src);
+        return 1;
+    }
+
+    tmpdir = mkdtemp(tmpl);
+    if (!tmpdir)
+        return 0;
+
+    snprintf(helper_path, sizeof(helper_path),
+             "%s/powergov-uninstall.sh", tmpdir);
+
+    cp_argv[0] = "cp";
+    cp_argv[1] = (char *)helper_src;
+    cp_argv[2] = helper_path;
+    cp_argv[3] = NULL;
+
+    if (!spawn_argv_ok(cp_argv) || chmod(helper_path, 0755) != 0)
+    {
+        snprintf(ctx->install_tmpdir, sizeof(ctx->install_tmpdir), "%s", tmpdir);
+        cleanup_install_tmpdir(ctx);
+        return 0;
+    }
+
+    snprintf(helper_dst, helper_dst_sz, "%s", helper_path);
+    snprintf(ctx->install_tmpdir, sizeof(ctx->install_tmpdir), "%s", tmpdir);
+    return 1;
+}
+
+static void run_user_cleanup_helper(void)
+{
+    char helper[512];
+    char *argv[2];
+    GError *err = NULL;
+
+    if (!resolve_user_cleanup_helper(helper, sizeof(helper)))
+        return;
+
+    argv[0] = helper;
+    argv[1] = NULL;
+    if (!g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH,
+                       NULL, NULL, NULL, &err))
+        g_clear_error(&err);
 }
 
 static gboolean refresh_async_idle(gpointer data)
@@ -885,6 +1007,128 @@ static void install_child_exit(GPid pid, gint status, gpointer data)
     g_clear_error(&err);
 }
 
+static void uninstall_child_exit(GPid pid, gint status, gpointer data)
+{
+    AppCtx *ctx = data;
+    GError *err = NULL;
+
+    g_spawn_close_pid(pid);
+    ctx->uninstall_busy = 0;
+    cleanup_install_tmpdir(ctx);
+    update_service_buttons(ctx, ctx->daemon_up);
+
+    if (g_spawn_check_wait_status(status, &err))
+    {
+        ctx->service_installed = 0;
+        ctx->daemon_up = 0;
+        run_user_cleanup_helper();
+        append_action_log(ctx, _(PG_TR_LOG_UNINSTALL_OK));
+        show_feedback(ctx, 1, _(PG_TR_FB_UNINSTALL_OK));
+        g_clear_error(&err);
+        return;
+    }
+
+    show_feedback(ctx, 0, _(PG_TR_ERR_UNINSTALL_DENIED));
+    append_action_log(ctx, _(PG_TR_ERR_UNINSTALL_DENIED));
+    g_clear_error(&err);
+}
+
+static void start_uninstall_async(AppCtx *ctx)
+{
+    char helper[512];
+    char helper_run[512];
+    char *argv[3];
+    GError *err = NULL;
+    GPid pid;
+
+    if (ctx->uninstall_busy)
+        return;
+
+    cleanup_install_tmpdir(ctx);
+
+    if (!resolve_uninstall_helper(helper, sizeof(helper)))
+    {
+        show_feedback(ctx, 0, _(PG_TR_ERR_UNINSTALL_UNAVAILABLE));
+        append_action_log(ctx, _(PG_TR_ERR_UNINSTALL_UNAVAILABLE));
+        return;
+    }
+
+    if (!materialize_uninstall_helper(ctx, helper, helper_run,
+                                      sizeof(helper_run)))
+    {
+        show_feedback(ctx, 0, _(PG_TR_ERR_UNINSTALL_UNAVAILABLE));
+        append_action_log(ctx, _(PG_TR_ERR_UNINSTALL_UNAVAILABLE));
+        return;
+    }
+
+    if (access(POWERGOV_PKEXEC, X_OK) != 0)
+    {
+        show_feedback(ctx, 0, _(PG_TR_ERR_DEV_NO_PKEXEC));
+        cleanup_install_tmpdir(ctx);
+        return;
+    }
+
+    argv[0] = (char *)POWERGOV_PKEXEC;
+    argv[1] = helper_run;
+    argv[2] = NULL;
+
+    if (!g_spawn_async(NULL, argv, NULL,
+                       G_SPAWN_DO_NOT_REAP_CHILD,
+                       NULL, NULL, &pid, &err))
+    {
+        show_feedback(ctx, 0, _(PG_TR_ERR_UNINSTALL_FAILED));
+        cleanup_install_tmpdir(ctx);
+        g_clear_error(&err);
+        return;
+    }
+
+    ctx->uninstall_busy = 1;
+    update_service_buttons(ctx, ctx->daemon_up);
+    show_feedback(ctx, 1, _(PG_TR_FB_UNINSTALL_RUNNING));
+    append_action_log(ctx, _(PG_TR_LOG_UNINSTALL_STARTED));
+    g_child_watch_add(pid, uninstall_child_exit, ctx);
+}
+
+static int prompt_uninstall(AppCtx *ctx)
+{
+    GtkWidget *dlg;
+    int response;
+
+    dlg = gtk_message_dialog_new(
+        GTK_WINDOW(ctx->window),
+        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        GTK_MESSAGE_WARNING,
+        GTK_BUTTONS_NONE,
+        "%s",
+        _(PG_TR_UNINSTALL_DIALOG_TITLE));
+    gtk_message_dialog_format_secondary_text(
+        GTK_MESSAGE_DIALOG(dlg), "%s", _(PG_TR_UNINSTALL_DIALOG_BODY));
+    gtk_dialog_add_button(GTK_DIALOG(dlg), _(PG_TR_UNINSTALL_DIALOG_NO),
+                          GTK_RESPONSE_CANCEL);
+    gtk_dialog_add_button(GTK_DIALOG(dlg), _(PG_TR_UNINSTALL_DIALOG_YES),
+                          GTK_RESPONSE_OK);
+    gtk_dialog_set_default_response(GTK_DIALOG(dlg), GTK_RESPONSE_CANCEL);
+
+    response = gtk_dialog_run(GTK_DIALOG(dlg));
+    gtk_widget_destroy(dlg);
+
+    if (response == GTK_RESPONSE_OK)
+    {
+        start_uninstall_async(ctx);
+        return 1;
+    }
+
+    return 0;
+}
+
+static void on_uninstall_clicked(GtkButton *btn, gpointer data)
+{
+    AppCtx *ctx = data;
+
+    (void)btn;
+    prompt_uninstall(ctx);
+}
+
 static void start_install_async(AppCtx *ctx)
 {
     char helper[512];
@@ -1056,6 +1300,13 @@ static void update_service_buttons(AppCtx *ctx, int systemd_active)
         gtk_widget_set_sensitive(ctx->start_btn, !ctx->install_busy);
     gtk_widget_set_sensitive(ctx->stop_btn, systemd_active);
     gtk_widget_set_sensitive(ctx->restart_btn, systemd_active);
+    if (ctx->uninstall_btn)
+    {
+        gtk_widget_set_visible(ctx->uninstall_btn, ctx->service_installed);
+        gtk_widget_set_sensitive(ctx->uninstall_btn,
+                                 ctx->service_installed &&
+                                 !ctx->install_busy && !ctx->uninstall_busy);
+    }
 }
 
 static void apply_dev_panels(AppCtx *ctx, const UiSnapshot *s)
@@ -1791,6 +2042,9 @@ static void refresh_ui_language(AppCtx *ctx)
                              : _(PG_TR_BTN_INSTALL_SERVICE));
     gtk_button_set_label(GTK_BUTTON(ctx->stop_btn), _(PG_TR_BTN_STOP));
     gtk_button_set_label(GTK_BUTTON(ctx->restart_btn), _(PG_TR_BTN_RESTART));
+    if (ctx->uninstall_btn)
+        gtk_button_set_label(GTK_BUTTON(ctx->uninstall_btn),
+                             _(PG_TR_BTN_UNINSTALL));
     update_dev_tab_access(ctx);
 
     if (ctx->battery_label)
@@ -2009,6 +2263,12 @@ static void build_ui(AppCtx *ctx)
                              gtk_label_new(_(PG_TR_TAB_DIAGNOSTIC)));
 
     gtk_box_pack_start(GTK_BOX(vbox), ctx->main_notebook, TRUE, TRUE, 0);
+
+    ctx->uninstall_btn = gtk_button_new_with_label(_(PG_TR_BTN_UNINSTALL));
+    g_signal_connect(ctx->uninstall_btn, "clicked",
+                     G_CALLBACK(on_uninstall_clicked), ctx);
+    gtk_widget_set_halign(ctx->uninstall_btn, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(vbox), ctx->uninstall_btn, FALSE, FALSE, 0);
 
     ctx->dev_btn = gtk_button_new_with_label(_(PG_TR_BTN_DEV_MODE));
     g_signal_connect(ctx->dev_btn, "clicked", G_CALLBACK(on_dev_btn_clicked), ctx);

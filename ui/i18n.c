@@ -128,6 +128,23 @@ static const char *const g_es[PG_TR_COUNT] =
     [PG_TR_FB_INSTALL_OK] = "Servicio instalado y en ejecución",
     [PG_TR_FB_INSTALL_PREPARING] = "Preparando instalación del servicio…",
     [PG_TR_FB_INSTALL_RUNNING] = "Instalando servicio (puede pedir contraseña de admin)…",
+    [PG_TR_BTN_UNINSTALL] = "Desinstalar",
+    [PG_TR_UNINSTALL_DIALOG_TITLE] = "Desinstalar PowerGov",
+    [PG_TR_UNINSTALL_DIALOG_BODY] =
+        "Se detendrá el servicio, se eliminarán los archivos del sistema "
+        "y los accesos directos de usuario.\n\n"
+        "¿Desea continuar?",
+    [PG_TR_UNINSTALL_DIALOG_YES] = "Sí, desinstalar",
+    [PG_TR_UNINSTALL_DIALOG_NO] = "Cancelar",
+    [PG_TR_ERR_UNINSTALL_UNAVAILABLE] =
+        "No se encontró el script de desinstalación",
+    [PG_TR_ERR_UNINSTALL_FAILED] = "No se pudo iniciar la desinstalación",
+    [PG_TR_ERR_UNINSTALL_DENIED] = "Desinstalación cancelada o denegada",
+    [PG_TR_LOG_UNINSTALL_STARTED] = "Desinstalación solicitada",
+    [PG_TR_LOG_UNINSTALL_OK] = "PowerGov desinstalado",
+    [PG_TR_FB_UNINSTALL_OK] = "Desinstalación completada. Cierre la aplicación.",
+    [PG_TR_FB_UNINSTALL_RUNNING] =
+        "Desinstalando (puede pedir contraseña de administrador)…",
     [PG_TR_LOG_LANG_AUTO] =
         "Idioma: español (detectado del sistema: %s)",
 };
@@ -246,6 +263,22 @@ static const char *const g_en[PG_TR_COUNT] =
     [PG_TR_FB_INSTALL_OK] = "Service installed and running",
     [PG_TR_FB_INSTALL_PREPARING] = "Preparing service installation…",
     [PG_TR_FB_INSTALL_RUNNING] = "Installing service (admin password may be required)…",
+    [PG_TR_BTN_UNINSTALL] = "Uninstall",
+    [PG_TR_UNINSTALL_DIALOG_TITLE] = "Uninstall PowerGov",
+    [PG_TR_UNINSTALL_DIALOG_BODY] =
+        "The service will stop, system files will be removed, "
+        "and user shortcuts will be cleared.\n\n"
+        "Do you want to continue?",
+    [PG_TR_UNINSTALL_DIALOG_YES] = "Yes, uninstall",
+    [PG_TR_UNINSTALL_DIALOG_NO] = "Cancel",
+    [PG_TR_ERR_UNINSTALL_UNAVAILABLE] = "Uninstall script not found",
+    [PG_TR_ERR_UNINSTALL_FAILED] = "Could not start uninstall",
+    [PG_TR_ERR_UNINSTALL_DENIED] = "Uninstall cancelled or denied",
+    [PG_TR_LOG_UNINSTALL_STARTED] = "Uninstall requested",
+    [PG_TR_LOG_UNINSTALL_OK] = "PowerGov uninstalled",
+    [PG_TR_FB_UNINSTALL_OK] = "Uninstall complete. You may close the app.",
+    [PG_TR_FB_UNINSTALL_RUNNING] =
+        "Uninstalling (admin password may be required)…",
     [PG_TR_LOG_LANG_AUTO] =
         "Language: English (detected from system: %s)",
 };

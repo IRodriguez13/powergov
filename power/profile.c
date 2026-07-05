@@ -61,9 +61,25 @@ void powergov_profile_compute(const powergov_config_t *cfg,
     {
         if (mode == POWERGOV_USER_MAX_BATTERY || low_battery)
         {
-            out->freq_cap_pct = low_battery ? 60 : cfg->freq_cap_battery_pct;
-            out->platform_profile = "low-power";
-            out->runtime_pm_aggressive = 1;
+            if (low_battery)
+            {
+                out->freq_cap_pct = POWERGOV_LOW_BATTERY_FREQ_CAP;
+                out->platform_profile = "low-power";
+                out->runtime_pm_aggressive = 1;
+            }
+            else if (power->capacity_pct >= 0 &&
+                     power->capacity_pct <= POWERGOV_CONSERVE_BATTERY_PCT)
+            {
+                out->freq_cap_pct = 0;
+                out->platform_profile = "balanced";
+                out->runtime_pm_aggressive = 0;
+            }
+            else if (mode == POWERGOV_USER_MAX_BATTERY)
+            {
+                out->freq_cap_pct = 0;
+                out->platform_profile = "balanced";
+                out->runtime_pm_aggressive = 0;
+            }
             if (gov_state == POWERGOV_GOV_PERFORMANCE && !out->allow_performance)
             {
                 out->governor = "schedutil";

@@ -39,8 +39,14 @@ NOTES="$(cat <<EOF
 4. La UI detecta el idioma del sistema (es → español; resto → inglés) y pregunta si instalar el servicio en segundo plano.
 5. Si aceptás, se pide contraseña de administrador **una vez** y queda todo el backend (systemd + daemon) listo.
 6. Si no aceptás, cualquier acción que requiera el servicio vuelve a preguntar.
+7. **Desinstalar:** botón al pie de la ventana (servicio instalado) → confirmación → contraseña de admin.
 
 **No hace falta compilar nada** para usar el AppImage.
+
+### Cambios en ${VERSION}
+
+- Desinstalación completa desde la UI (servicio, archivos del sistema y accesos directos).
+- Modo inteligente más fluido con batería > 30 % (sin techo de frecuencia ni perfil low-power hasta reserva baja).
 
 ### Instalación desde código fuente (tarball)
 

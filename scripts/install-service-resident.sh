@@ -19,7 +19,7 @@ if [[ "$(id -u)" -ne 0 ]]; then
     exit 1
 fi
 
-for f in powergov libpowergov.so powergov.conf powergov.service org.powergov.policy dev-auth; do
+for f in powergov libpowergov.so powergov.conf powergov.service org.powergov.policy dev-auth powergov-uninstall.sh remove-appimage-user-files.sh; do
     if [[ ! -f "${STAGING}/${f}" ]]; then
         echo "install-service-resident: missing ${STAGING}/${f}" >&2
         exit 1
@@ -33,6 +33,10 @@ install -D -m 644 "${STAGING}/powergov.service" "${SYSTEMD_UNIT}"
 install -D -m 644 "${STAGING}/org.powergov.policy" \
     /usr/share/polkit-1/actions/org.powergov.policy
 install -D -m 755 "${STAGING}/dev-auth" "${LIBEXEC}/dev-auth"
+install -D -m 755 "${STAGING}/powergov-uninstall.sh" \
+    "${LIBEXEC}/powergov-uninstall.sh"
+install -D -m 755 "${STAGING}/remove-appimage-user-files.sh" \
+    "${LIBEXEC}/remove-appimage-user-files.sh"
 install -D -m 755 "$(readlink -f "$0")" "${LIBEXEC}/install-service-resident.sh"
 
 mkdir -p "${LIBEXEC}/staging"
