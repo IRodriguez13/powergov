@@ -173,7 +173,7 @@ const char *powergov_user_mode_title(powergov_user_mode_t mode)
 {
     switch (mode)
     {
-    case POWERGOV_USER_MAX_BATTERY: return "Máxima autonomía";
+    case POWERGOV_USER_MAX_BATTERY: return "Modo inteligente";
     case POWERGOV_USER_BALANCED:    return "Equilibrado";
     case POWERGOV_USER_PERFORMANCE: return "Máximo rendimiento";
     default:                        return "Desconocido";
@@ -185,11 +185,11 @@ const char *powergov_user_mode_subtitle(powergov_user_mode_t mode)
     switch (mode)
     {
     case POWERGOV_USER_MAX_BATTERY:
-        return "Recomendado en batería (modo Smart)";
+        return "Automático — ahorra en batería, afloja enchufado";
     case POWERGOV_USER_BALANCED:
-        return "Balance rendimiento y batería";
+        return "Intermedio manual entre autonomía y velocidad";
     case POWERGOV_USER_PERFORMANCE:
-        return "Prioriza rendimiento incluso en batería";
+        return "Manual — prioriza velocidad incluso en batería";
     default:
         return "";
     }

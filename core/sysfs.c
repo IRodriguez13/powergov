@@ -34,6 +34,7 @@ int sysfs_read_file(const char *path, char *out, size_t out_sz)
 int sysfs_write_file(const char *path, const char *value)
 {
     FILE *f;
+    int ret = 0;
 
     if (!path || !value)
         return -1;
@@ -43,13 +44,12 @@ int sysfs_write_file(const char *path, const char *value)
         return -1;
 
     if (fprintf(f, "%s", value) < 0)
-    {
-        fclose(f);
-        return -1;
-    }
+        ret = -1;
 
-    fclose(f);
-    return 0;
+    if (fclose(f) != 0)
+        ret = -1;
+
+    return ret;
 }
 
 int sysfs_read_int(const char *path, long *out)

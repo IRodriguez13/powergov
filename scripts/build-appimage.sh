@@ -55,10 +55,11 @@ export PATH="${CACHE}:${PATH}"
 
 echo "==> prepare AppDir"
 rm -rf "${APPDIR}"
-mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/lib/powergov/staging" \
+mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/lib" \
+    "${APPDIR}/usr/lib/powergov/staging" \
     "${APPDIR}/usr/libexec/powergov"
-cp "${ROOT}/powergov-ui" "${ROOT}/libpowergov.so" "${APPDIR}/usr/bin/"
-cp -a "${STAGING}/." "${APPDIR}/usr/lib/powergov/staging/"
+cp "${ROOT}/powergov-ui" "${APPDIR}/usr/bin/"
+cp "${ROOT}/libpowergov.so" "${APPDIR}/usr/lib/"
 cp "${ROOT}/scripts/install-service-resident.sh" \
     "${APPDIR}/usr/libexec/powergov/install-service-resident.sh"
 chmod +x "${APPDIR}/usr/libexec/powergov/install-service-resident.sh"
@@ -89,9 +90,16 @@ export DEPLOY_GTK_VERSION=3
 echo "==> linuxdeploy (GTK3)"
 "${LINUXDEPLOY}" --appdir "${APPDIR}" \
     --executable "${APPDIR}/usr/bin/powergov-ui" \
+    --library "${APPDIR}/usr/lib/libpowergov.so" \
     --desktop-file "${DESKTOP}" \
     --icon-file "${ICON}" \
-    --plugin gtk \
+    --plugin gtk
+
+echo "==> embed service staging (after gtk plugin)"
+cp -a "${STAGING}/." "${APPDIR}/usr/lib/powergov/staging/"
+
+echo "==> pack AppImage"
+"${LINUXDEPLOY}" --appdir "${APPDIR}" \
     --output appimage \
     --custom-apprun "${APPRUN}"
 

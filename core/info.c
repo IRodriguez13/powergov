@@ -320,6 +320,34 @@ void powergov_info_fill_metrics(powergov_reply_metrics_t *out)
     fclose(f);
 }
 
+#define PG_LOG_TAIL_SCAN_MAX (256 * 1024)
+
+static void seek_log_tail_window(FILE *f)
+{
+    long size;
+    long start;
+
+    if (fseek(f, 0, SEEK_END) != 0)
+        return;
+
+    size = ftell(f);
+    if (size <= 0)
+        return;
+
+    start = size - PG_LOG_TAIL_SCAN_MAX;
+    if (start < 0)
+        start = 0;
+
+    if (fseek(f, start, SEEK_SET) != 0)
+        return;
+
+    if (start > 0)
+    {
+        char discard[512];
+        (void)fgets(discard, sizeof(discard), f);
+    }
+}
+
 void powergov_info_fill_log(int lines, powergov_reply_log_t *out)
 {
     FILE *f;
@@ -346,6 +374,8 @@ void powergov_info_fill_log(int lines, powergov_reply_log_t *out)
                  "Could not read %s", POWERGOV_LOG_PATH);
         return;
     }
+
+    seek_log_tail_window(f);
 
     cap = lines;
     ring = calloc((size_t)cap, sizeof(char *));

@@ -29,6 +29,11 @@ static const char *const g_es[PG_TR_COUNT] =
     [PG_TR_BTN_STOP] = "Detener",
     [PG_TR_BTN_RESTART] = "Reiniciar",
     [PG_TR_LABEL_BATTERY_PROTECT] = "Protección batería (%)",
+    [PG_TR_LABEL_PROFILE_HINT] =
+        "Seleccione cómo gestionar la energía de su equipo. El modo inteligente "
+        "se ajusta automáticamente según la batería, la alimentación de CA y "
+        "la carga del sistema. Perfil recomendado para la mayoría de los usuarios.",
+    [PG_TR_LABEL_ADVANCED_MODES] = "Perfiles manuales",
     [PG_TR_LABEL_RECENT_ACTIVITY] = "Actividad reciente",
     [PG_TR_DEV_LOCK_BANNER] =
         "El diagnóstico técnico requiere permisos de administrador.\n"
@@ -142,6 +147,11 @@ static const char *const g_en[PG_TR_COUNT] =
     [PG_TR_BTN_STOP] = "Stop",
     [PG_TR_BTN_RESTART] = "Restart",
     [PG_TR_LABEL_BATTERY_PROTECT] = "Battery protection (%)",
+    [PG_TR_LABEL_PROFILE_HINT] =
+        "Select how to manage power on your device. Smart mode adjusts "
+        "automatically based on battery status, AC power, and system load. "
+        "Recommended default profile.",
+    [PG_TR_LABEL_ADVANCED_MODES] = "Manual profiles",
     [PG_TR_LABEL_RECENT_ACTIVITY] = "Recent activity",
     [PG_TR_DEV_LOCK_BANNER] =
         "Technical diagnostics require administrator privileges.\n"
@@ -377,7 +387,7 @@ const char *pg_user_mode_title(powergov_user_mode_t mode)
     {
         switch (mode)
         {
-        case POWERGOV_USER_MAX_BATTERY: return "Max battery life";
+        case POWERGOV_USER_MAX_BATTERY: return "Smart mode";
         case POWERGOV_USER_BALANCED:    return "Balanced";
         case POWERGOV_USER_PERFORMANCE: return "Max performance";
         default:                        return "Unknown";
@@ -386,7 +396,7 @@ const char *pg_user_mode_title(powergov_user_mode_t mode)
 
     switch (mode)
     {
-    case POWERGOV_USER_MAX_BATTERY: return "Máxima autonomía";
+    case POWERGOV_USER_MAX_BATTERY: return "Modo inteligente";
     case POWERGOV_USER_BALANCED:    return "Equilibrado";
     case POWERGOV_USER_PERFORMANCE: return "Máximo rendimiento";
     default:                        return "Desconocido";
@@ -400,11 +410,11 @@ const char *pg_user_mode_subtitle(powergov_user_mode_t mode)
         switch (mode)
         {
         case POWERGOV_USER_MAX_BATTERY:
-            return "Recommended on battery (Smart mode)";
+            return "Automatic: efficiency on battery, higher performance on AC";
         case POWERGOV_USER_BALANCED:
-            return "Balance performance and battery";
+            return "Manual middle ground between battery and speed";
         case POWERGOV_USER_PERFORMANCE:
-            return "Prioritize performance even on battery";
+            return "Manual — prioritize speed even on battery";
         default:
             return "";
         }
@@ -413,11 +423,11 @@ const char *pg_user_mode_subtitle(powergov_user_mode_t mode)
     switch (mode)
     {
     case POWERGOV_USER_MAX_BATTERY:
-        return "Recomendado en batería (modo Smart)";
+        return "Automático: eficiencia con batería, mayor rendimiento con CA";
     case POWERGOV_USER_BALANCED:
-        return "Balance rendimiento y batería";
+        return "Intermedio manual entre autonomía y velocidad";
     case POWERGOV_USER_PERFORMANCE:
-        return "Prioriza rendimiento incluso en batería";
+        return "Manual — prioriza velocidad incluso en batería";
     default:
         return "";
     }

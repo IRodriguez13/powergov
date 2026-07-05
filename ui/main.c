@@ -82,6 +82,8 @@ struct _AppCtx
     GtkWidget *feedback_label;
     GtkWidget *action_log_view;
     GtkWidget *mode_box;
+    GtkWidget *profile_hint_label;
+    GtkWidget *advanced_modes_label;
     GtkWidget *battery_switch;
     GtkWidget *battery_scale;
     GtkWidget *main_notebook;
@@ -338,7 +340,12 @@ static void apply_ui_theme(void)
         ".pg-feedback-ok { color: #A5D6A7; font-weight: 600; }\n"
         ".pg-feedback-err { color: #FFCC80; font-weight: 600; }\n"
         ".pg-dev-lock { color: #B0BEC5; font-style: italic; padding: 12px; }\n"
-        ".pg-title { font-size: 18pt; font-weight: 700; }\n",
+        ".pg-title { font-size: 18pt; font-weight: 700; }\n"
+        ".pg-profile-hint { color: #B0BEC5; font-size: 10pt; }\n"
+        ".pg-advanced-label { color: #90A4AE; font-size: 9pt; "
+        "margin-top: 6px; margin-bottom: 2px; }\n"
+        ".pg-mode-smart { background-color: rgba(129, 199, 132, 0.08); "
+        "border-radius: 6px; }\n",
         -1, NULL);
     gtk_style_context_add_provider_for_screen(
         gdk_screen_get_default(),
@@ -1122,7 +1129,7 @@ static void snapshot_worker(GTask *task, gpointer source, gpointer data,
     {
         powergov_reply_bundle_t bundle;
 
-        if (powergov_client_query_bundle(POWERGOV_BUNDLE_DEV_ALL, 120, &bundle) == 0)
+        if (powergov_client_query_bundle(POWERGOV_BUNDLE_DEV_ALL, 80, &bundle) == 0)
         {
             s->st = bundle.status;
             s->sys = bundle.system;
@@ -1566,6 +1573,11 @@ static GtkWidget *mode_button(AppCtx *ctx, powergov_user_mode_t mode,
 
     gtk_button_set_relief(GTK_BUTTON(btn), GTK_RELIEF_NONE);
     gtk_widget_set_halign(btn, GTK_ALIGN_START);
+    if (mode == POWERGOV_USER_MAX_BATTERY)
+    {
+        gtk_style_context_add_class(
+            gtk_widget_get_style_context(btn), "pg-mode-smart");
+    }
     gtk_container_add(GTK_CONTAINER(btn), box);
     g_object_set_data(G_OBJECT(btn), "mode", GINT_TO_POINTER((int)mode));
     g_object_set_data(G_OBJECT(btn), "mode_title", title);
@@ -1658,6 +1670,16 @@ static void refresh_ui_language(AppCtx *ctx)
     if (ctx->battery_label)
         gtk_label_set_text(GTK_LABEL(ctx->battery_label),
                            _(PG_TR_LABEL_BATTERY_PROTECT));
+    if (ctx->profile_hint_label)
+    {
+        gtk_label_set_text(GTK_LABEL(ctx->profile_hint_label),
+                           _(PG_TR_LABEL_PROFILE_HINT));
+    }
+    if (ctx->advanced_modes_label)
+    {
+        gtk_label_set_text(GTK_LABEL(ctx->advanced_modes_label),
+                           _(PG_TR_LABEL_ADVANCED_MODES));
+    }
     if (ctx->activity_label)
         gtk_label_set_text(GTK_LABEL(ctx->activity_label),
                            _(PG_TR_LABEL_RECENT_ACTIVITY));
@@ -1783,10 +1805,32 @@ static void build_ui(AppCtx *ctx)
     ctx->main_notebook = gtk_notebook_new();
 
     ctx->mode_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    for (i = 0; i < 3; i++)
+
+    ctx->profile_hint_label = gtk_label_new(_(PG_TR_LABEL_PROFILE_HINT));
+    gtk_label_set_line_wrap(GTK_LABEL(ctx->profile_hint_label), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(ctx->profile_hint_label), 0.0);
+    gtk_style_context_add_class(
+        gtk_widget_get_style_context(ctx->profile_hint_label), "pg-profile-hint");
+    gtk_box_pack_start(GTK_BOX(ctx->mode_box), ctx->profile_hint_label,
+                       FALSE, FALSE, 0);
+
+    {
+        GtkWidget *smart_btn = mode_button(ctx, POWERGOV_USER_MAX_BATTERY, NULL);
+        gtk_box_pack_start(GTK_BOX(ctx->mode_box), smart_btn, FALSE, FALSE, 0);
+    }
+
+    ctx->advanced_modes_label = gtk_label_new(_(PG_TR_LABEL_ADVANCED_MODES));
+    gtk_label_set_xalign(GTK_LABEL(ctx->advanced_modes_label), 0.0);
+    gtk_style_context_add_class(
+        gtk_widget_get_style_context(ctx->advanced_modes_label),
+        "pg-advanced-label");
+    gtk_box_pack_start(GTK_BOX(ctx->mode_box), ctx->advanced_modes_label,
+                       FALSE, FALSE, 0);
+
+    for (i = 1; i < 3; i++)
     {
         GtkWidget *btn = mode_button(ctx, (powergov_user_mode_t)i,
-                                     i > 0 ? ctx->mode_buttons[0] : NULL);
+                                     ctx->mode_buttons[0]);
         gtk_box_pack_start(GTK_BOX(ctx->mode_box), btn, FALSE, FALSE, 0);
     }
 
