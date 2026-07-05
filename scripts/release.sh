@@ -45,9 +45,7 @@ NOTES="$(cat <<EOF
 
 ### Cambios en ${VERSION}
 
-- **Aviso de actualización:** al abrir la app, consulta GitHub Releases (sin servidor propio). Si hay versión nueva, ofrece abrir la página de descarga. «Ahora no» no vuelve a avisar por esa versión.
-- **Modo inteligente:** ahorro agresivo (techo CPU, low-power, runtime PM) solo con batería **≤ 15 %** (antes 20 %).
-- Desinstalación desde la UI, acceso directo automático, desacoplo de terminal (\`POWERGOV_FG=1\` para depuración).
+- Release de verificación del aviso de actualización en la UI (usuarios en 1.9.0 deberían ver el diálogo al abrir la app).
 
 ### Instalación desde código fuente (tarball)
 
