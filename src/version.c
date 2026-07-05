@@ -1,5 +1,5 @@
 /*
- * version.c - Version output for powergov
+ * version.c - Version output for powergov (pack/extract -v layout)
  * Copyright (C) 2026 Iván Ezequiel Rodriguez
  * License: GPLv3+
  */
@@ -7,6 +7,50 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+
+static void version_write_body(FILE *fp)
+{
+    fprintf(fp,
+            "Copyright (C) %s %s\n"
+            "License GPLv3+: GNU GPL version 3 or later "
+            "<https://gnu.org/licenses/gpl.html>.\n"
+            "This is free software: you are free to change and redistribute it.\n"
+            "There is NO WARRANTY, to the extent permitted by law.\n"
+            "\n"
+            "Source: %s\n"
+            "\n"
+            "Escrito por %s.\n",
+            POWERGOV_COPYRIGHT_YEAR,
+            POWERGOV_AUTHOR_NAME,
+            POWERGOV_SOURCE_URL,
+            POWERGOV_AUTHOR_NAME);
+}
+
+int powergov_version_title_line(char *out, size_t outsz, const char *program)
+{
+    const char *prog;
+
+    if (!out || outsz == 0)
+        return 0;
+
+    prog = (program && program[0]) ? program : POWERGOV_PACKAGE_NAME;
+    return snprintf(out, outsz, "%s (%s) %s", prog, POWERGOV_PACKAGE_NAME,
+                    POWERGOV_VERSION);
+}
+
+void powergov_print_version_for(const char *program)
+{
+    const char *prog;
+
+    prog = (program && program[0]) ? program : POWERGOV_PACKAGE_NAME;
+    printf("%s (%s) %s\n", prog, POWERGOV_PACKAGE_NAME, POWERGOV_VERSION);
+    version_write_body(stdout);
+}
+
+void powergov_print_version(void)
+{
+    powergov_print_version_for(POWERGOV_PACKAGE_NAME);
+}
 
 int powergov_version_parse(const char *s, int *maj, int *min, int *pat)
 {
@@ -96,20 +140,4 @@ int powergov_probe_installed_daemon_version(char *out, size_t outsz)
     }
 
     return out[0] != '\0';
-}
-
-void powergov_print_version(void)
-{
-    printf(
-        "powergov (powergov) %s\n"
-        "Copyright (C) 2026 Iván Ezequiel Rodriguez\n"
-        "License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.\n"
-        "This is free software: you are free to change and redistribute it.\n"
-        "There is NO WARRANTY, to the extent permitted by law.\n"
-        "\n"
-        "Source: %s\n"
-        "\n"
-        "Escrito por Iván Ezequiel Rodriguez.\n",
-        POWERGOV_VERSION,
-        POWERGOV_SOURCE_URL);
 }

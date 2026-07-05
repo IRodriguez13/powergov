@@ -1,7 +1,7 @@
 # powergov — Documentación
 
 > **Última verificación:** 2026-07-05  
-> **Fuente de verdad:** `include/powergov/types.h`, `core/loop.c`, `config/config.c`, `devices/peripheral_pm.c`, `platform/tlp_compat.c`, `doc/powergov.1`, `doc/powergov.8`
+> **Fuente de verdad:** `include/powergov/types.h`, `core/loop.c`, `config/config.c`, `devices/disk_pm.c`, `devices/pcie_aspm.c`, `devices/bluetooth_pm.c`, `devices/peripheral_pm.c`, `power/profile.c`, `platform/tlp_compat.c`, `doc/powergov.1`, `doc/powergov.8`
 
 Índice de documentación operativa y de diseño del daemon **powergov** (gestor modular de energía para portátiles Linux, userspace + sysfs).
 
@@ -12,7 +12,7 @@
 | [arquitectura.md](arquitectura.md) | Módulos, flujo del daemon, máquina de estados, determinismo |
 | [configuracion.md](configuracion.md) | `/etc/powergov.conf`, modos de usuario, features, periféricos, CLI |
 | [operacion.md](operacion.md) | Build, install, systemd, socket en caliente, TLP/ppd |
-| [modulos-sysfs.md](modulos-sysfs.md) | Subsistemas (CPU, plataforma, runtime PM, peripheral PM) |
+| [modulos-sysfs.md](modulos-sysfs.md) | Subsistemas (CPU, plataforma, runtime PM, disk_pm, ASPM, BT, peripheral PM) |
 | [metricas-logging-dev.md](metricas-logging-dev.md) | Métricas apply/verify, RAPL, `dev-log`, `dev-metrics` |
 | [impacto-bateria-teorico.md](impacto-bateria-teorico.md) | Análisis estático de autonomía esperada |
 | [../ui/README.md](../ui/README.md) | UI GTK (usuario + modo Dev + bandeja) |
@@ -46,4 +46,4 @@ Tras `sudo make install`, las páginas quedan en `/usr/local/share/man/man1` y `
 - GPU discreta (NVIDIA Optimus, etc.)
 - Wayland compositor / gestión de ventanas
 
-**Incluido desde v1.10:** WiFi power save (`iw`), SATA `libata` link power, audio codec `power_save` — vía feature `peripheral_pm` y modo **custom** (UI: periféricos **a demanda**).
+**Incluido desde v1.11:** disk APM/ALPM/NVMe (`disk_pm`), PCIe ASPM, Bluetooth PM, política reactiva `device_aggression` vs reglas fijas TLP.

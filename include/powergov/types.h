@@ -62,6 +62,9 @@ typedef struct
     unsigned platform_profile : 1;
     unsigned runtime_pm      : 1;
     unsigned peripheral_pm   : 1;
+    unsigned disk_pm         : 1;
+    unsigned pcie_aspm       : 1;
+    unsigned bluetooth_pm    : 1;
 } powergov_features_t;
 
 typedef struct
@@ -130,6 +133,9 @@ typedef enum
     POWERGOV_FEATURE_PLATFORM,
     POWERGOV_FEATURE_RUNTIME_PM,
     POWERGOV_FEATURE_PERIPHERAL_PM,
+    POWERGOV_FEATURE_DISK_PM,
+    POWERGOV_FEATURE_PCIE_ASPM,
+    POWERGOV_FEATURE_BLUETOOTH_PM,
     POWERGOV_FEATURE_COUNT
 } powergov_feature_id_t;
 
@@ -173,6 +179,7 @@ typedef struct
     const char *platform_profile;
     int runtime_pm_aggressive;
     int peripheral_pm_level;
+    int device_aggression;
     int allow_performance;
 } powergov_effective_policy_t;
 

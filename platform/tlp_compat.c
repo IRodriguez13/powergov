@@ -39,3 +39,21 @@ int tlp_active(void)
 
     return 0;
 }
+
+int tlp_defers_feature(powergov_feature_id_t id)
+{
+    if (!tlp_active())
+        return 0;
+
+    switch (id)
+    {
+    case POWERGOV_FEATURE_RUNTIME_PM:
+    case POWERGOV_FEATURE_PERIPHERAL_PM:
+    case POWERGOV_FEATURE_DISK_PM:
+    case POWERGOV_FEATURE_PCIE_ASPM:
+    case POWERGOV_FEATURE_BLUETOOTH_PM:
+        return 1;
+    default:
+        return 0;
+    }
+}

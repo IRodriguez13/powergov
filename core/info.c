@@ -7,6 +7,9 @@
 #include "../platform/platform_profile.h"
 #include "../platform/tlp_compat.h"
 #include "../devices/peripheral_pm.h"
+#include "../devices/disk_pm.h"
+#include "../devices/pcie_aspm.h"
+#include "../devices/bluetooth_pm.h"
 #include "../core/sysfs.h"
 #include "../include/version.h"
 #include <stdio.h>
@@ -236,6 +239,12 @@ static int feature_hw(int id)
         return sysfs_path_exists("/sys/bus/pci/devices");
     case POWERGOV_FEATURE_PERIPHERAL_PM:
         return peripheral_pm_available();
+    case POWERGOV_FEATURE_DISK_PM:
+        return disk_pm_available();
+    case POWERGOV_FEATURE_PCIE_ASPM:
+        return pcie_aspm_available();
+    case POWERGOV_FEATURE_BLUETOOTH_PM:
+        return bluetooth_pm_available();
     default:
         return 0;
     }
@@ -275,15 +284,10 @@ void powergov_info_fill_compat(const powergov_config_t *cfg,
             st = POWERGOV_COMPAT_CONFLICT;
             detail = "power-profiles-daemon active; powergov skips platform_profile.";
         }
-        else if (i == POWERGOV_FEATURE_RUNTIME_PM && tlp_active())
+        else if (tlp_defers_feature((powergov_feature_id_t)i))
         {
             st = POWERGOV_COMPAT_CONFLICT;
-            detail = "TLP active; powergov defers runtime_pm to TLP.";
-        }
-        else if (i == POWERGOV_FEATURE_PERIPHERAL_PM && tlp_active())
-        {
-            st = POWERGOV_COMPAT_CONFLICT;
-            detail = "TLP active; powergov defers peripheral_pm to TLP.";
+            detail = "TLP active; powergov defers this layer to TLP.";
         }
         else if (i == POWERGOV_FEATURE_FREQ_CAP && hw)
         {
@@ -300,7 +304,25 @@ void powergov_info_fill_compat(const powergov_config_t *cfg,
         else if (i == POWERGOV_FEATURE_PERIPHERAL_PM && hw)
         {
             st = POWERGOV_COMPAT_PARTIAL;
-            detail = "WiFi (iw), SATA ALPM, audio power_save on battery.";
+            detail = "WiFi (iw) and audio power_save on battery.";
+            partial++;
+        }
+        else if (i == POWERGOV_FEATURE_DISK_PM && hw)
+        {
+            st = POWERGOV_COMPAT_PARTIAL;
+            detail = "Disk APM (hdparm), SATA ALPM, NVMe runtime PM.";
+            partial++;
+        }
+        else if (i == POWERGOV_FEATURE_PCIE_ASPM && hw)
+        {
+            st = POWERGOV_COMPAT_PARTIAL;
+            detail = "PCIe ASPM policy via module parameter.";
+            partial++;
+        }
+        else if (i == POWERGOV_FEATURE_BLUETOOTH_PM && hw)
+        {
+            st = POWERGOV_COMPAT_PARTIAL;
+            detail = "Bluetooth HCI runtime power control.";
             partial++;
         }
         else if (hw)

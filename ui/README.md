@@ -7,6 +7,7 @@ Interfaz de escritorio nativa. Usa `libpowergov.so` y el socket Unix del daemon 
 ```bash
 make libpowergov.so powergov-ui
 ./powergov-ui
+powergov-ui -v    # misma plantilla que pack/extract -v
 ```
 
 Requiere `pkg-config gtk+-3.0`. El daemon debe estar en ejecución (`systemd` o `sudo powergov on`).
@@ -36,6 +37,7 @@ Incluye icono, `.desktop`, Polkit (`org.powergov.policy`) y helper `powergov-dev
 | Área | Contenido |
 |------|-----------|
 | **Usuario** | Modos max-battery / balanced / performance, reserva batería (slider), estado, instalar/desinstalar servicio |
+| **Acerca de** | Versión UI/daemon (`powergov-ui -v` / `powergov -v`), licencia GPLv3, enlace al repo |
 | **Dev** (Polkit) | Métricas, log, features, umbrales, periféricos (modo custom, a demanda) |
 
 Modo **custom** y tuning avanzado solo en Dev. Los checkboxes de periféricos esperan la primera sincronización con el daemon antes de aceptar clics (evita desalineación UI/config).

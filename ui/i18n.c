@@ -17,6 +17,9 @@ static const char *const g_es[PG_TR_COUNT] =
     [PG_TR_CONNECTING] = "Conectando…",
     [PG_TR_TAB_PROFILE] = "Perfil",
     [PG_TR_TAB_DIAGNOSTIC] = "Diagnóstico",
+    [PG_TR_TAB_ABOUT] = "Acerca de",
+    [PG_TR_ABOUT_SERVICE_FMT] = "Servicio (powergov): %s",
+    [PG_TR_ABOUT_SERVICE_OFF] = "Servicio (powergov): no en ejecución",
     [PG_TR_TAB_SYSTEM] = "Sistema",
     [PG_TR_TAB_CPU] = "CPU",
     [PG_TR_TAB_COMPAT] = "Compat",
@@ -41,8 +44,9 @@ static const char *const g_es[PG_TR_COUNT] =
         "El diagnóstico técnico requiere permisos de administrador.\n"
         "Usá el botón «Modo desarrollador» para desbloquearlo.",
     [PG_TR_TLP_WARN_BANNER] =
-        "TLP está activo: PowerGov no aplica runtime_pm ni peripheral_pm "
-        "para no interferir. CPU, EPP, turbo y platform siguen activos.",
+        "TLP está activo: PowerGov no aplica runtime_pm, peripheral_pm, "
+        "disk_pm, pcie_aspm ni bluetooth_pm para no interferir. "
+        "CPU, EPP, turbo y platform siguen activos.",
     [PG_TR_LABEL_FEATURES] =
         "Subsistemas (se guardan en /etc/powergov.conf)",
     [PG_TR_LABEL_PERIPHERAL] =
@@ -54,7 +58,10 @@ static const char *const g_es[PG_TR_COUNT] =
     [PG_TR_FEAT_TURBO] = "Turbo boost",
     [PG_TR_FEAT_PLATFORM] = "Perfil de plataforma (ACPI)",
     [PG_TR_FEAT_RUNTIME_PM] = "Runtime PM (PCI/USB)",
-    [PG_TR_FEAT_PERIPHERAL_PM] = "PM periféricos (WiFi/SATA/audio)",
+    [PG_TR_FEAT_PERIPHERAL_PM] = "PM periféricos (WiFi/audio)",
+    [PG_TR_FEAT_DISK_PM] = "PM discos (APM/ALPM/NVMe)",
+    [PG_TR_FEAT_PCIE_ASPM] = "PCIe ASPM",
+    [PG_TR_FEAT_BLUETOOTH_PM] = "Bluetooth power save",
     [PG_TR_FEAT_PERIPH_WIFI] = "Ahorro de energía WiFi",
     [PG_TR_FEAT_PERIPH_SATA] = "ALPM SATA",
     [PG_TR_FEAT_PERIPH_AUDIO] = "Ahorro de energía audio",
@@ -210,6 +217,9 @@ static const char *const g_en[PG_TR_COUNT] =
     [PG_TR_CONNECTING] = "Connecting…",
     [PG_TR_TAB_PROFILE] = "Profile",
     [PG_TR_TAB_DIAGNOSTIC] = "Diagnostics",
+    [PG_TR_TAB_ABOUT] = "About",
+    [PG_TR_ABOUT_SERVICE_FMT] = "Service (powergov): %s",
+    [PG_TR_ABOUT_SERVICE_OFF] = "Service (powergov): not running",
     [PG_TR_TAB_SYSTEM] = "System",
     [PG_TR_TAB_CPU] = "CPU",
     [PG_TR_TAB_COMPAT] = "Compat",
@@ -234,8 +244,9 @@ static const char *const g_en[PG_TR_COUNT] =
         "Technical diagnostics require administrator privileges.\n"
         "Use the «Developer mode» button to unlock.",
     [PG_TR_TLP_WARN_BANNER] =
-        "TLP is active: PowerGov skips runtime_pm and peripheral_pm to avoid "
-        "conflicts. CPU, EPP, turbo, and platform remain active.",
+        "TLP is active: PowerGov skips runtime_pm, peripheral_pm, disk_pm, "
+        "pcie_aspm, and bluetooth_pm to avoid conflicts. CPU, EPP, turbo, "
+        "and platform remain active.",
     [PG_TR_LABEL_FEATURES] = "Subsystems (saved to /etc/powergov.conf)",
     [PG_TR_LABEL_PERIPHERAL] = "Peripherals (custom mode, on demand)",
     [PG_TR_LABEL_TUNING] = "Thresholds and fine tuning",
@@ -245,7 +256,10 @@ static const char *const g_en[PG_TR_COUNT] =
     [PG_TR_FEAT_TURBO] = "Turbo boost",
     [PG_TR_FEAT_PLATFORM] = "Platform profile (ACPI)",
     [PG_TR_FEAT_RUNTIME_PM] = "Runtime PM (PCI/USB)",
-    [PG_TR_FEAT_PERIPHERAL_PM] = "Peripheral PM (WiFi/SATA/audio)",
+    [PG_TR_FEAT_PERIPHERAL_PM] = "Peripheral PM (WiFi/audio)",
+    [PG_TR_FEAT_DISK_PM] = "Disk PM (APM/ALPM/NVMe)",
+    [PG_TR_FEAT_PCIE_ASPM] = "PCIe ASPM",
+    [PG_TR_FEAT_BLUETOOTH_PM] = "Bluetooth power save",
     [PG_TR_FEAT_PERIPH_WIFI] = "WiFi power_save",
     [PG_TR_FEAT_PERIPH_SATA] = "SATA ALPM",
     [PG_TR_FEAT_PERIPH_AUDIO] = "Audio power_save",
@@ -694,6 +708,9 @@ const char *pg_feature_label(powergov_feature_id_t id)
     case POWERGOV_FEATURE_PLATFORM:      return pg_tr(PG_TR_FEAT_PLATFORM);
     case POWERGOV_FEATURE_RUNTIME_PM:    return pg_tr(PG_TR_FEAT_RUNTIME_PM);
     case POWERGOV_FEATURE_PERIPHERAL_PM: return pg_tr(PG_TR_FEAT_PERIPHERAL_PM);
+    case POWERGOV_FEATURE_DISK_PM:       return pg_tr(PG_TR_FEAT_DISK_PM);
+    case POWERGOV_FEATURE_PCIE_ASPM:     return pg_tr(PG_TR_FEAT_PCIE_ASPM);
+    case POWERGOV_FEATURE_BLUETOOTH_PM:  return pg_tr(PG_TR_FEAT_BLUETOOTH_PM);
     default:                             return "";
     }
 }

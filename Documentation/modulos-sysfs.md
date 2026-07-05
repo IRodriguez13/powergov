@@ -1,7 +1,7 @@
 # Módulos e interfaces sysfs
 
 > **Última verificación:** 2026-07-05  
-> **Fuente de verdad:** `cpu/*.c`, `platform/platform_profile.c`, `devices/runtime_pm.c`, `power/power_supply.c`, `core/sysfs.c`
+> **Fuente de verdad:** `cpu/*.c`, `platform/platform_profile.c`, `devices/*.c`, `power/profile.c`, `core/sysfs.c`
 
 Cada módulo implementa **apply** (escribir si difiere), **verify** (releer y comparar) y registra métricas `apply_ok|fail|skip` y `verify_ok|fail`.
 
@@ -77,11 +77,44 @@ Feature: `peripheral_pm`. Solo aplica en modo usuario **custom** con opciones in
 
 | Subsistema | Mecanismo | Notas |
 |------------|-----------|-------|
-| WiFi | `iw dev <iface> set power_save on\|off` | Requiere `iw` en PATH; interfaces wireless vía `/sys/class/net/*/wireless` |
-| SATA | Escritura `link_power_management_policy` en `/sys/class/scsi_host/*/link_power_management_policy` o dispositivo block asociado | Restaura valor guardado al desactivar |
-| Audio | `power_save` en `/sys/class/sound/card*/device/.../power/control` o codec HDA | Best-effort según hardware |
+| WiFi | `iw dev <iface> set power_save on\|off` | Requiere `iw` en PATH |
+| Audio | `power_save` en codecs HDA | Best-effort según hardware |
 
 Código: `devices/peripheral_pm.c`. Métricas: `apply_ok|fail|skip`, `verify_ok|fail` como el resto de módulos.
+
+## devices/disk_pm
+
+Feature: `disk_pm`. Aplica según **`device_aggression`** (0–3) derivado de carga/modo/SOC en [`power/profile.c`](../power/profile.c). **No aplica si TLP está activo.**
+
+| Subsistema | Mecanismo | Niveles |
+|------------|-----------|---------|
+| Disk APM | `hdparm -B` en `/dev/sd*` (excluye USB) | 1→192, 2→128, 3→127 |
+| SATA ALPM | `link_power_management_policy` en `scsi_host` | med / min_power |
+| NVMe runtime | `.../device/power/control` → `auto` | nivel ≥2 |
+
+Opción `PERIPHERAL_SATA` en conf controla la parte SATA. Restore al shutdown.
+
+## devices/pcie_aspm
+
+Feature: `pcie_aspm`. Escribe `/sys/module/pcie_aspm/parameters/policy`:
+
+- agresión 0–1 → `default`
+- agresión ≥2 en batería → `powersave`
+
+## devices/bluetooth_pm
+
+Feature: `bluetooth_pm`. Nivel ≥2 en batería: `power/control` → `auto` en HCI (`/sys/class/bluetooth/*/device/power/control`).
+
+## Política reactiva (`device_aggression`)
+
+| Nivel | Cuándo (batería) | Capas típicas |
+|-------|------------------|---------------|
+| 0 | AC o performance permitido | restore device PM |
+| 1 | BALANCED | WiFi PS, ASPM default |
+| 2 | POWERSAVE / max-battery | + disk APM, ASPM powersave, BT, runtime PM |
+| 3 | SOC ≤ LOW_BATTERY | + APM agresivo, SATA min_power |
+
+TLP activo → powergov **no aplica** runtime_pm, peripheral_pm, disk_pm, pcie_aspm, bluetooth_pm (`platform/tlp_compat.c`).
 
 ## metrics / RAPL
 

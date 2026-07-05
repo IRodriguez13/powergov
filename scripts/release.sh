@@ -42,24 +42,25 @@ NOTES="$(cat <<EOF
 
 **No hace falta compilar nada** para usar el AppImage.
 
-### Cambios en ${VERSION}
+### Cambios en ${VERSION} — TLP-parity reactivo
 
 #### Daemon y política
-- Feature **peripheral_pm**: ahorro WiFi (\`iw power_save\`), SATA link power y audio codec (\`power_save\`) en modo **custom**, a demanda.
-- Modo usuario **custom** con flags \`CUSTOM_ALLOW_PERFORMANCE\`, \`CUSTOM_RUNTIME_AGGRESSIVE\` y \`PERIPHERAL_*\` en \`/etc/powergov.conf\`.
-- Detección **TLP**: si TLP está activo, powergov no aplica \`runtime_pm\` ni \`peripheral_pm\`.
-- Socket: comandos \`SET_TUNING\` / \`QUERY_TUNING\` para umbrales y periféricos.
-- Reserva batería por defecto **15 %** (\`LOW_BATTERY\`).
+- **device_aggression** (0–3): política reactiva según carga CPU, modo usuario y SOC (no perfiles AC/BAT fijos como TLP).
+- Nuevas features: **disk_pm** (hdparm APM, SATA ALPM, NVMe), **pcie_aspm**, **bluetooth_pm**.
+- **peripheral_pm** refactorizado: WiFi + audio; SATA migrado a disk_pm.
+- Convivencia **TLP**: si TLP está activo, powergov difiere runtime_pm, peripheral_pm, disk_pm, pcie_aspm y bluetooth_pm.
+- Con TLP desactivado, powergov es **alternativa viable** con el stack device PM completo.
 
 #### UI GTK
-- Modo Dev: pestaña Características traducible; periféricos **a demanda** (sync inicial antes de editar).
-- Bandeja del sistema (icono rayo); cerrar con X oculta la ventana (\`POWERGOV_NO_TRAY=1\` para salir).
-- Refresco adaptativo (~8 s con foco), carga perezosa en pestañas Dev, check de actualización al arrancar.
-- Fix métricas/log sin falso «daemon no está en ejecución»; upgrade daemon cuando el API es más nuevo.
-- Rutas **XDG** para escritorio/descargas (\`scripts/powergov-xdg-paths.sh\`).
+- Pestaña **Acerca de**: versión (misma plantilla que \`pack -v\`), licencia, enlace al repo, versión del servicio.
+- \`powergov-ui -v\` / \`powergov -v\`: salida unificada con metadatos GPLv3.
+- Features Dev: checkboxes disk_pm, pcie_aspm, bluetooth_pm (bloqueados si TLP activo).
+
+#### Herramientas
+- \`scripts/bench-battery-session.sh\`: benchmark comparativo powergov vs TLP en batería (host).
 
 #### Empaquetado
-- AppImage: instalación estable en \`~/.local/share/powergov/PowerGov.AppImage\` (sin duplicados versionados en Descargas).
+- AppImage: instalación estable en \`~/.local/share/powergov/PowerGov.AppImage\`.
 
 ### Instalación desde código fuente (tarball)
 
@@ -73,13 +74,14 @@ Requiere: \`build-essential pkg-config libgtk-3-dev zenity\`.
 
 ### Documentación
 
-- README y \`Documentation/\` actualizados.
-- \`man powergov\` / \`man 8 powergov\` — peripheral_pm, custom, TLP.
+- README, \`Documentation/\` y mandocs actualizados (TLP, device_aggression, nuevas features).
+- \`man powergov\` / \`man 8 powergov\`.
 
 ### Notas
 
 - UI GTK con idioma automático (LANG/LC_MESSAGES) + botón EN/ES.
 - \`make appimage\` es para quien publica releases (~2 min); los usuarios descargan el binario empaquetado.
+- WWAN, GPU dGPU y parseo de \`tlp.conf\` siguen fuera de alcance (backlog).
 EOF
 )"
 

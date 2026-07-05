@@ -1,4 +1,4 @@
-.TH POWERGOV 1 "July 2026" "powergov 1.10.0" "User Commands"
+.TH POWERGOV 1 "July 2026" "powergov 1.11.0" "User Commands"
 .SH NAME
 powergov \- modular laptop power policy daemon for Linux
 .SH SYNOPSIS
@@ -80,7 +80,14 @@ Enable or disable a subsystem
 .BR turbo ,
 .BR platform ,
 .BR runtime_pm ,
-.BR peripheral_pm ).
+.BR peripheral_pm ,
+.BR disk_pm ,
+.BR pcie_aspm ,
+.BR bluetooth_pm ).
+.PP
+Device layers use a reactive
+.B device_aggression
+level (0–3) derived from CPU governor state, user mode, and battery SOC — unlike static AC/BAT profiles in tools such as TLP.
 .TP
 .B features list
 List available feature names.

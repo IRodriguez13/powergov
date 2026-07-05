@@ -9,7 +9,6 @@
 #include <unistd.h>
 
 #define MAX_WIFI   8
-#define MAX_SATA   16
 #define MAX_AUDIO  8
 
 typedef struct
@@ -22,23 +21,14 @@ typedef struct
 typedef struct
 {
     char path[512];
-    char saved[32];
-} sata_entry_t;
-
-typedef struct
-{
-    char path[512];
     char saved[16];
 } audio_entry_t;
 
 static int g_level;
 static unsigned g_last_wifi = 1;
-static unsigned g_last_sata = 1;
 static unsigned g_last_audio = 1;
 static wifi_entry_t g_wifi[MAX_WIFI];
 static int g_wifi_count;
-static sata_entry_t g_sata[MAX_SATA];
-static int g_sata_count;
 static audio_entry_t g_audio[MAX_AUDIO];
 static int g_audio_count;
 
@@ -160,51 +150,6 @@ static void wifi_restore(void)
     g_wifi_count = 0;
 }
 
-static void sata_apply(const char *policy)
-{
-    DIR *d;
-    struct dirent *ent;
-    char path[512];
-
-    d = opendir("/sys/class/scsi_host");
-    if (!d || !policy)
-        return;
-
-    while ((ent = readdir(d)) != NULL)
-    {
-        if (ent->d_name[0] == '.')
-            continue;
-        if (g_sata_count >= MAX_SATA)
-            break;
-
-        snprintf(path, sizeof(path),
-                 "/sys/class/scsi_host/%s/link_power_management_policy",
-                 ent->d_name);
-        if (!sysfs_path_exists(path))
-            continue;
-
-        if (sysfs_read_file(path, g_sata[g_sata_count].saved,
-                            sizeof(g_sata[g_sata_count].saved)) != 0)
-            continue;
-
-        snprintf(g_sata[g_sata_count].path,
-                 sizeof(g_sata[g_sata_count].path), "%s", path);
-        if (sysfs_write_file(path, policy) == 0)
-            g_sata_count++;
-    }
-
-    closedir(d);
-}
-
-static void sata_restore(void)
-{
-    int i;
-
-    for (i = 0; i < g_sata_count; i++)
-        sysfs_write_file(g_sata[i].path, g_sata[i].saved);
-    g_sata_count = 0;
-}
-
 static void audio_apply(int on)
 {
     static const char *const paths[] = {
@@ -252,16 +197,8 @@ static void audio_restore(void)
 
 int peripheral_pm_available(void)
 {
-    DIR *d;
-
     if (iw_bin())
         return 1;
-    d = opendir("/sys/class/scsi_host");
-    if (d)
-    {
-        closedir(d);
-        return 1;
-    }
     return sysfs_path_exists(
         "/sys/module/snd_hda_intel/parameters/power_save");
 }
@@ -275,15 +212,12 @@ int peripheral_pm_apply(int level)
 
 int peripheral_pm_apply_cfg(int level, const powergov_peripheral_opts_t *opts)
 {
-    const char *sata_policy;
     int wifi = 1;
-    int sata = 1;
     int audio = 1;
 
     if (level <= 0)
     {
         g_last_wifi = 1;
-        g_last_sata = 1;
         g_last_audio = 1;
         return peripheral_pm_restore();
     }
@@ -291,21 +225,18 @@ int peripheral_pm_apply_cfg(int level, const powergov_peripheral_opts_t *opts)
     if (opts)
     {
         wifi = opts->wifi;
-        sata = opts->sata;
         audio = opts->audio;
     }
 
-    if (!wifi && !sata && !audio)
+    if (!wifi && !audio)
     {
         g_last_wifi = 1;
-        g_last_sata = 1;
         g_last_audio = 1;
         return peripheral_pm_restore();
     }
 
-    if (g_level == level && g_wifi_count + g_sata_count + g_audio_count > 0 &&
-        wifi == (int)g_last_wifi && sata == (int)g_last_sata &&
-        audio == (int)g_last_audio)
+    if (g_level == level && g_wifi_count + g_audio_count > 0 &&
+        wifi == (int)g_last_wifi && audio == (int)g_last_audio)
     {
         powergov_metrics_apply(POWERGOV_FEATURE_PERIPHERAL_PM, 1, 1);
         return 0;
@@ -313,22 +244,18 @@ int peripheral_pm_apply_cfg(int level, const powergov_peripheral_opts_t *opts)
 
     peripheral_pm_restore();
 
-    sata_policy = (level >= 2) ? "min_power" : "med_power_withapm";
     if (wifi)
         wifi_apply(1);
-    if (sata)
-        sata_apply(sata_policy);
     if (audio)
         audio_apply(1);
     g_level = level;
     g_last_wifi = (unsigned)wifi;
-    g_last_sata = (unsigned)sata;
     g_last_audio = (unsigned)audio;
 
-    PG_LOG_I("peripheral_pm", "level=%d wifi=%d sata=%d audio=%d",
-             level, g_wifi_count, g_sata_count, g_audio_count);
+    PG_LOG_I("peripheral_pm", "level=%d wifi=%d audio=%d",
+             level, g_wifi_count, g_audio_count);
     powergov_metrics_apply(POWERGOV_FEATURE_PERIPHERAL_PM,
-                           g_wifi_count + g_sata_count + g_audio_count > 0,
+                           g_wifi_count + g_audio_count > 0,
                            0);
     return 0;
 }
@@ -336,11 +263,9 @@ int peripheral_pm_apply_cfg(int level, const powergov_peripheral_opts_t *opts)
 int peripheral_pm_restore(void)
 {
     wifi_restore();
-    sata_restore();
     audio_restore();
     g_level = 0;
     g_last_wifi = 1;
-    g_last_sata = 1;
     g_last_audio = 1;
     powergov_metrics_apply(POWERGOV_FEATURE_PERIPHERAL_PM, 1, 0);
     return 0;

@@ -42,6 +42,13 @@ int powergov_feature_parse_name(const char *name, powergov_feature_id_t *out)
     else if (strcmp(name, "peripheral-pm") == 0 ||
              strcmp(name, "peripheral_pm") == 0)
         *out = POWERGOV_FEATURE_PERIPHERAL_PM;
+    else if (strcmp(name, "disk-pm") == 0 || strcmp(name, "disk_pm") == 0)
+        *out = POWERGOV_FEATURE_DISK_PM;
+    else if (strcmp(name, "pcie-aspm") == 0 || strcmp(name, "pcie_aspm") == 0)
+        *out = POWERGOV_FEATURE_PCIE_ASPM;
+    else if (strcmp(name, "bluetooth-pm") == 0 ||
+             strcmp(name, "bluetooth_pm") == 0)
+        *out = POWERGOV_FEATURE_BLUETOOTH_PM;
     else
         return -1;
 
@@ -67,6 +74,9 @@ static void parse_features_string(powergov_features_t *f, const char *s)
     f->platform_profile = 0;
     f->runtime_pm = 0;
     f->peripheral_pm = 0;
+    f->disk_pm = 0;
+    f->pcie_aspm = 0;
+    f->bluetooth_pm = 0;
 
     tok = strtok_r(buf, ",", &save);
     while (tok)

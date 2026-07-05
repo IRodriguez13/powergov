@@ -81,7 +81,7 @@ En `dev-metrics`, comprobar que los subsistemas habilitados muestran `verify_ok`
 
 - **GNOME/KDE** suelen usar `power-profiles-daemon`. powergov detecta ppd y no toca `platform_profile` para evitar conflictos.
 - Si usás ppd para el perfil de plataforma, podés dejar `feature platform off` y confiar en powergov para CPU/EPP/turbo.
-- **TLP:** si el servicio o stack TLP está activo (`platform/tlp_compat.c`), powergov **omite** `runtime_pm` y `peripheral_pm`. Desactivá uno de los dos para esas áreas o desactivá TLP si querés que powergov gestione dispositivos.
+- **TLP:** si el servicio o stack TLP está activo, powergov **omite** runtime_pm, peripheral_pm, disk_pm, pcie_aspm y bluetooth_pm. Ver checklist «Alternativa a TLP» en [configuracion.md](configuracion.md).
 
 ## AppImage y actualizaciones
 
@@ -89,6 +89,7 @@ En `dev-metrics`, comprobar que los subsistemas habilitados muestran `verify_ok`
 - Instalación usuario: `~/.local/share/powergov/PowerGov.AppImage` (sobrescribe; sin copias versionadas duplicadas en Descargas)
 - Atajos: `$XDG_DESKTOP_DIR` vía `scripts/powergov-xdg-paths.sh`
 - Release: `make release` (tarball + AppImage a GitHub Releases con `gh`)
+- Benchmark batería: `scripts/bench-battery-session.sh powergov|tlp|baseline`
 
 ## Permisos de log
 

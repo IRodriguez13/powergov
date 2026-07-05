@@ -37,7 +37,10 @@ Plantilla en repo: `config/powergov.conf`.
 | `turbo` | boost / no_turbo | `cpu/turbo.c` |
 | `platform` | ACPI platform_profile | `platform/platform_profile.c` |
 | `runtime_pm` | PCI/USB auto suspend | `devices/runtime_pm.c` |
-| `peripheral_pm` | WiFi / SATA / audio on demand | `devices/peripheral_pm.c` |
+| `peripheral_pm` | WiFi / audio on demand | `devices/peripheral_pm.c` |
+| `disk_pm` | APM hdparm, SATA ALPM, NVMe | `devices/disk_pm.c` |
+| `pcie_aspm` | PCIe ASPM policy | `devices/pcie_aspm.c` |
+| `bluetooth_pm` | HCI runtime PM | `devices/bluetooth_pm.c` |
 
 ## Modos de usuario (`USER_MODE`)
 
@@ -54,7 +57,18 @@ Default del proyecto: **`max-battery`** — proteger autonomía salvo que el usu
 
 Con `USER_MODE=custom` y `peripheral_pm` en `FEATURES`, el daemon aplica ahorro por dispositivo según `PERIPHERAL_WIFI`, `PERIPHERAL_SATA`, `PERIPHERAL_AUDIO`. La UI GTK expone tres checkboxes (sincronizados con el daemon tras la primera lectura de tuning).
 
-Si **TLP** está activo, `runtime_pm` y `peripheral_pm` no se aplican (detección en `platform/tlp_compat.c`).
+Si **TLP** está activo, `runtime_pm`, `peripheral_pm`, `disk_pm`, `pcie_aspm` y `bluetooth_pm` no se aplican (detección en `platform/tlp_compat.c`).
+
+### Alternativa a TLP (powergov solo)
+
+```bash
+sudo systemctl disable --now tlp.service
+sudo systemctl enable --now powergov
+sudo powergov mode max-battery
+powergov dev-metrics   # verify_ok en disk_pm, pcie_aspm, etc.
+```
+
+Benchmark comparativo: `scripts/bench-battery-session.sh powergov` vs `tlp` (misma duración, brillo fijo).
 
 ## CLI
 

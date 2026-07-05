@@ -8,6 +8,9 @@
 #include "../platform/tlp_compat.h"
 #include "../devices/runtime_pm.h"
 #include "../devices/peripheral_pm.h"
+#include "../devices/disk_pm.h"
+#include "../devices/pcie_aspm.h"
+#include "../devices/bluetooth_pm.h"
 #include "../log/log.h"
 #include "../metrics/metrics.h"
 #include "../cpu/governor.h"
@@ -70,6 +73,8 @@ static void apply_full_policy(const powergov_config_t *cfg,
                               const powergov_effective_policy_t *policy)
 {
     int tlp = tlp_active();
+    int agg = policy->device_aggression;
+    int runtime_on = policy->runtime_pm_aggressive || agg >= 2;
 
     cpu_policy_apply(cfg, policy);
 
@@ -77,14 +82,29 @@ static void apply_full_policy(const powergov_config_t *cfg,
         platform_profile_apply(policy->platform_profile);
 
     if (cfg->features.runtime_pm && !tlp)
-        runtime_pm_apply_aggressive(policy->runtime_pm_aggressive);
+        runtime_pm_apply_aggressive(runtime_on);
     else
         runtime_pm_restore();
+
+    if (cfg->features.disk_pm && !tlp)
+        disk_pm_apply(agg, &cfg->peripheral);
+    else
+        disk_pm_restore();
+
+    if (cfg->features.pcie_aspm && !tlp)
+        pcie_aspm_apply(agg);
+    else
+        pcie_aspm_restore();
 
     if (cfg->features.peripheral_pm && !tlp)
         peripheral_pm_apply_cfg(policy->peripheral_pm_level, &cfg->peripheral);
     else
         peripheral_pm_restore();
+
+    if (cfg->features.bluetooth_pm && !tlp)
+        bluetooth_pm_apply(agg);
+    else
+        bluetooth_pm_restore();
 }
 
 static void apply_tuning_value(powergov_config_t *config, int id, int value)
@@ -157,13 +177,18 @@ static void defer_tlp_layers(powergov_config_t *config)
     if (!tlp_active() || !config)
         return;
 
-    if (config->features.runtime_pm || config->features.peripheral_pm)
+    if (config->features.runtime_pm || config->features.peripheral_pm ||
+        config->features.disk_pm || config->features.pcie_aspm ||
+        config->features.bluetooth_pm)
     {
         config->features.runtime_pm = 0;
         config->features.peripheral_pm = 0;
+        config->features.disk_pm = 0;
+        config->features.pcie_aspm = 0;
+        config->features.bluetooth_pm = 0;
         if (!logged)
         {
-            PG_LOG_W("loop", "TLP active; deferring runtime_pm and peripheral_pm to TLP");
+            PG_LOG_W("loop", "TLP active; deferring device PM layers to TLP");
             logged = 1;
         }
     }
@@ -207,6 +232,8 @@ static int policy_changed(const powergov_effective_policy_t *prev,
     if (prev->runtime_pm_aggressive != cur->runtime_pm_aggressive)
         return 1;
     if (prev->peripheral_pm_level != cur->peripheral_pm_level)
+        return 1;
+    if (prev->device_aggression != cur->device_aggression)
         return 1;
     if (prev->platform_profile != cur->platform_profile)
         return 1;
@@ -296,9 +323,7 @@ int handle_socket_config(int sockfd, powergov_config_t *config)
             {
                 int mask;
 
-                if (tlp_active() &&
-                    (msg.value == POWERGOV_FEATURE_RUNTIME_PM ||
-                     msg.value == POWERGOV_FEATURE_PERIPHERAL_PM) &&
+                if (tlp_defers_feature((powergov_feature_id_t)msg.value) &&
                     msg.value2)
                 {
                     PG_LOG_W("loop", "TLP active; cannot enable %s",
@@ -572,7 +597,10 @@ void powergov_loop(powergov_config_t *config)
 
     cpu_policy_restore(config);
     runtime_pm_restore();
+    disk_pm_restore();
+    pcie_aspm_restore();
     peripheral_pm_restore();
+    bluetooth_pm_restore();
     cleanup_socket_server(socket_fd);
     PG_LOG_I("loop", "shutdown complete");
     powergov_log_shutdown();

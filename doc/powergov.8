@@ -1,4 +1,4 @@
-.TH POWERGOV 8 "July 2026" "powergov 1.10.0" "System Administration"
+.TH POWERGOV 8 "July 2026" "powergov 1.11.0" "System Administration"
 .SH NAME
 powergov \- systemd service for modular laptop power management
 .SH SYNOPSIS
@@ -82,12 +82,21 @@ PCI and USB
 .I power/control
 (auto suspend).
 .TP
+.B disk_pm
+Disk APM (hdparm), SATA ALPM, NVMe runtime — level from
+.B device_aggression .
+.TP
+.B pcie_aspm
+PCIe ASPM module policy (
+.I default
+or
+.IR powersave ).
+.TP
+.B bluetooth_pm
+Bluetooth HCI runtime power when aggression ≥2 on battery.
+.TP
 .B peripheral_pm
-WiFi power save
-.RB ( iw ),
-SATA link power management, audio codec power_save — only in
-.B custom
-user mode and when not deferred to TLP (see below).
+WiFi (iw) and audio codec power_save.
 .SH INTERACTION WITH OTHER TOOLS
 If
 .B power-profiles-daemon
@@ -101,11 +110,15 @@ If
 (service, runtime directory, or active
 .BR tlp (8)
 stack) is detected, powergov skips
-.B runtime_pm
+.B runtime_pm ,
+.B peripheral_pm ,
+.B disk_pm ,
+.B pcie_aspm ,
 and
-.B peripheral_pm
+.B bluetooth_pm
 application to avoid duplicate device policy. CPU and platform features may
-still run; configure a single primary tool for overlapping sysfs nodes.
+still run; for full device PM use powergov without TLP (see
+.IR Documentation/operacion.md ).
 .PP
 Third-party tools such as
 .BR cpupower (1)

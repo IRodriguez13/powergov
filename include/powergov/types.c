@@ -60,6 +60,9 @@ const char *powergov_feature_name(powergov_feature_id_t id)
     case POWERGOV_FEATURE_PLATFORM:   return "platform";
     case POWERGOV_FEATURE_RUNTIME_PM: return "runtime_pm";
     case POWERGOV_FEATURE_PERIPHERAL_PM: return "peripheral_pm";
+    case POWERGOV_FEATURE_DISK_PM: return "disk_pm";
+    case POWERGOV_FEATURE_PCIE_ASPM: return "pcie_aspm";
+    case POWERGOV_FEATURE_BLUETOOTH_PM: return "bluetooth_pm";
     default:                          return "unknown";
     }
 }
@@ -78,6 +81,9 @@ void powergov_config_set_defaults(powergov_config_t *cfg)
     cfg->features.platform_profile = 1;
     cfg->features.runtime_pm = 1;
     cfg->features.peripheral_pm = 1;
+    cfg->features.disk_pm = 1;
+    cfg->features.pcie_aspm = 1;
+    cfg->features.bluetooth_pm = 1;
     cfg->log_level = POWERGOV_LOG_INFO;
     cfg->dev_log_enabled = 1;
     cfg->threshold_low = POWERGOV_THRESHOLD_LOW_DEF;
@@ -104,6 +110,9 @@ int powergov_features_to_mask(const powergov_features_t *f)
     if (f->platform_profile) m |= (1 << POWERGOV_FEATURE_PLATFORM);
     if (f->runtime_pm)       m |= (1 << POWERGOV_FEATURE_RUNTIME_PM);
     if (f->peripheral_pm)    m |= (1 << POWERGOV_FEATURE_PERIPHERAL_PM);
+    if (f->disk_pm)          m |= (1 << POWERGOV_FEATURE_DISK_PM);
+    if (f->pcie_aspm)        m |= (1 << POWERGOV_FEATURE_PCIE_ASPM);
+    if (f->bluetooth_pm)     m |= (1 << POWERGOV_FEATURE_BLUETOOTH_PM);
     return m;
 }
 
@@ -118,4 +127,7 @@ void powergov_features_from_mask(powergov_features_t *f, int mask)
     f->platform_profile = (mask >> POWERGOV_FEATURE_PLATFORM) & 1;
     f->runtime_pm = (mask >> POWERGOV_FEATURE_RUNTIME_PM) & 1;
     f->peripheral_pm = (mask >> POWERGOV_FEATURE_PERIPHERAL_PM) & 1;
+    f->disk_pm = (mask >> POWERGOV_FEATURE_DISK_PM) & 1;
+    f->pcie_aspm = (mask >> POWERGOV_FEATURE_PCIE_ASPM) & 1;
+    f->bluetooth_pm = (mask >> POWERGOV_FEATURE_BLUETOOTH_PM) & 1;
 }

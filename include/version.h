@@ -2,14 +2,23 @@
 #define POWERGOV_VERSION_H
 
 #include <stddef.h>
+#include <stdio.h>
 
 #ifndef POWERGOV_VERSION
 #define POWERGOV_VERSION "unknown"
 #endif
 
-#define POWERGOV_SOURCE_URL "https://github.com/IRodriguez13/powergov"
+#define POWERGOV_PACKAGE_NAME     "powergov"
+#define POWERGOV_SOURCE_URL       "https://github.com/IRodriguez13/powergov"
+#define POWERGOV_COPYRIGHT_YEAR   "2026"
+#define POWERGOV_AUTHOR_NAME      "Iván Ezequiel Rodriguez"
 
+/* CLI: same layout as pack/extract -v (program (package) version + GPL block). */
 void powergov_print_version(void);
+void powergov_print_version_for(const char *program);
+
+/* "program (powergov) X.Y.Z" into out; returns bytes written (excluding NUL). */
+int powergov_version_title_line(char *out, size_t outsz, const char *program);
 
 /* Returns 1 on success; writes major/minor/patch (patch 0 if omitted). */
 int powergov_version_parse(const char *s, int *maj, int *min, int *pat);

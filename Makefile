@@ -26,6 +26,9 @@ SRC = main.c \
       platform/tlp_compat.c \
       devices/runtime_pm.c \
       devices/peripheral_pm.c \
+      devices/disk_pm.c \
+      devices/pcie_aspm.c \
+      devices/bluetooth_pm.c \
       log/log.c \
       metrics/metrics.c \
       config/config.c

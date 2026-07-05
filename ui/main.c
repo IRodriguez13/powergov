@@ -28,6 +28,8 @@
 #define PG_DEV_TAB_COUNT     6
 #define PG_MAIN_TAB_PROFILE  0
 #define PG_MAIN_TAB_DIAG     1
+#define PG_MAIN_TAB_ABOUT    2
+#define POWERGOV_UI_PROGRAM  "powergov-ui"
 #define POLKIT_DEV_MODE      "org.powergov.dev-mode"
 #define POLKIT_MANAGE_SVC    "org.powergov.manage-service"
 #define POLKIT_INSTALL_SVC   "org.powergov.install-service"
@@ -139,6 +141,7 @@ struct _AppCtx
     GtkWidget *features_section_label;
     GtkWidget *peripheral_section_label;
     GtkWidget *tlp_banner;
+    GtkWidget *about_service_label;
     GtkWidget *feature_checks[POWERGOV_FEATURE_COUNT];
     GtkWidget *periph_checks[3];
     gulong feature_handlers[POWERGOV_FEATURE_COUNT];
@@ -157,6 +160,7 @@ struct _AppCtx
     gulong battery_sw_handler;
     int daemon_up;
     int service_installed;
+    char daemon_version[64];
     int dev_unlocked;
     int install_busy;
     int uninstall_busy;
@@ -502,6 +506,8 @@ static gboolean on_timer(gpointer data);
 static GdkPixbuf *load_brand_icon(int size);
 static int dev_mode_active(const AppCtx *ctx);
 static void update_service_buttons(AppCtx *ctx, int systemd_active);
+static void update_about_service_label(AppCtx *ctx, const char *daemon_ver,
+                                       int daemon_up);
 
 static int path_needs_materialize(const char *helper, const char *staging)
 {
@@ -735,6 +741,21 @@ static int dev_mode_active(const AppCtx *ctx)
     return ctx->dev_unlocked;
 }
 
+static int ui_tlp_blocks_feature(int feature_id)
+{
+    switch ((powergov_feature_id_t)feature_id)
+    {
+    case POWERGOV_FEATURE_RUNTIME_PM:
+    case POWERGOV_FEATURE_PERIPHERAL_PM:
+    case POWERGOV_FEATURE_DISK_PM:
+    case POWERGOV_FEATURE_PCIE_ASPM:
+    case POWERGOV_FEATURE_BLUETOOTH_PM:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static int periph_index_from_tuning(int tuning_id)
 {
     switch ((powergov_tuning_id_t)tuning_id)
@@ -900,7 +921,16 @@ static void apply_ui_theme(void)
         ".pg-battery-scale highlight { background-color: #81C784; "
         "border-radius: 3px; }\n"
         ".pg-battery-scale:disabled { opacity: 0.45; }\n"
-        ".pg-periph-pending { opacity: 0.65; }\n",
+        ".pg-periph-pending { opacity: 0.65; }\n"
+        ".pg-about-page { padding: 16px 24px; }\n"
+        ".pg-about-version { color: #B0BEC5; font-size: 11pt; "
+        "font-family: monospace; margin-top: 4px; }\n"
+        ".pg-about-body { color: #CFD8DC; font-size: 10pt; "
+        "line-height: 1.45; margin-top: 12px; }\n"
+        ".pg-about-author { color: #90A4AE; font-size: 10pt; "
+        "font-style: italic; margin-top: 8px; }\n"
+        ".pg-about-service { color: #81C784; font-size: 10pt; "
+        "margin-top: 16px; }\n",
         -1, NULL);
     gtk_style_context_add_provider_for_screen(
         gdk_screen_get_default(),
@@ -2120,6 +2150,9 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
         if (!dev_mode_active(ctx))
             clear_dev_views(ctx);
 
+        ctx->daemon_version[0] = '\0';
+        update_about_service_label(ctx, NULL, 0);
+
         if (!s->service_installed && !ctx->startup_prompt_done)
         {
             ctx->startup_prompt_done = 1;
@@ -2227,8 +2260,7 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
             {
                 int on = (s->st.features_mask >> i) & 1;
                 int tlp_block = ctx->tlp_active_cached &&
-                                  (i == POWERGOV_FEATURE_RUNTIME_PM ||
-                                   i == POWERGOV_FEATURE_PERIPHERAL_PM);
+                                ui_tlp_blocks_feature(i);
 
                 if (ctx->feature_checks[i])
                 {
@@ -2253,6 +2285,9 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
 
     if (s->daemon_outdated && !ctx->daemon_upgrade_prompted)
         maybe_prompt_daemon_upgrade(ctx, s->daemon_version, s->daemon_api_old);
+
+    g_strlcpy(ctx->daemon_version, s->daemon_version, sizeof(ctx->daemon_version));
+    update_about_service_label(ctx, ctx->daemon_version, 1);
 
     g_free(s);
 }
@@ -2559,8 +2594,7 @@ static void user_action_done(GObject *src, GAsyncResult *res, gpointer data)
         if (!r->send_ok || !r->verify_ok)
         {
             if (ctx->tlp_active_cached &&
-                (r->feature_id == POWERGOV_FEATURE_RUNTIME_PM ||
-                 r->feature_id == POWERGOV_FEATURE_PERIPHERAL_PM) &&
+                ui_tlp_blocks_feature(r->feature_id) &&
                 r->feature_on)
             {
                 show_feedback(ctx, 0, _(PG_TR_ERR_FEATURE_TLP));
@@ -3164,6 +3198,9 @@ static void refresh_ui_language(AppCtx *ctx)
                           _(PG_TR_TAB_PROFILE));
     notebook_tab_set_text(GTK_NOTEBOOK(ctx->main_notebook), 1,
                           _(PG_TR_TAB_DIAGNOSTIC));
+    notebook_tab_set_text(GTK_NOTEBOOK(ctx->main_notebook), 2,
+                          _(PG_TR_TAB_ABOUT));
+    update_about_service_label(ctx, ctx->daemon_version, ctx->daemon_up);
 
     for (i = 0; i < PG_DEV_TAB_COUNT; i++)
     {
@@ -3186,6 +3223,137 @@ static void on_lang_btn_clicked(GtkButton *btn, gpointer data)
     (void)btn;
     pg_i18n_toggle();
     refresh_ui_language(ctx);
+}
+
+static GtkWidget *make_about_page(AppCtx *ctx)
+{
+    GtkWidget *scroll;
+    GtkWidget *outer;
+    GtkWidget *col;
+    char title_line[128];
+    char body[512];
+    char author_line[128];
+    GdkPixbuf *logo_pb;
+
+    scroll = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+
+    outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_style_context_add_class(
+        gtk_widget_get_style_context(outer), "pg-about-page");
+
+    col = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_halign(col, GTK_ALIGN_CENTER);
+    gtk_container_set_border_width(GTK_CONTAINER(col), 8);
+
+    logo_pb = load_brand_icon(96);
+    if (logo_pb)
+    {
+        GtkWidget *img = gtk_image_new_from_pixbuf(logo_pb);
+
+        g_object_unref(logo_pb);
+        gtk_widget_set_halign(img, GTK_ALIGN_CENTER);
+        gtk_box_pack_start(GTK_BOX(col), img, FALSE, FALSE, 0);
+    }
+
+    {
+        GtkWidget *title = gtk_label_new("PowerGov");
+
+        gtk_widget_set_halign(title, GTK_ALIGN_CENTER);
+        gtk_style_context_add_class(
+            gtk_widget_get_style_context(title), "pg-title");
+        gtk_box_pack_start(GTK_BOX(col), title, FALSE, FALSE, 8);
+    }
+
+    powergov_version_title_line(title_line, sizeof(title_line),
+                                POWERGOV_UI_PROGRAM);
+    {
+        GtkWidget *ver = gtk_label_new(title_line);
+
+        gtk_widget_set_halign(ver, GTK_ALIGN_CENTER);
+        gtk_style_context_add_class(
+            gtk_widget_get_style_context(ver), "pg-about-version");
+        gtk_box_pack_start(GTK_BOX(col), ver, FALSE, FALSE, 0);
+    }
+
+    snprintf(body, sizeof(body),
+             "Copyright (C) %s %s\n"
+             "License GPLv3+: GNU GPL version 3 or later "
+             "<https://gnu.org/licenses/gpl.html>.\n"
+             "This is free software: you are free to change and redistribute it.\n"
+             "There is NO WARRANTY, to the extent permitted by law.",
+             POWERGOV_COPYRIGHT_YEAR, POWERGOV_AUTHOR_NAME);
+    {
+        GtkWidget *lic = gtk_label_new(body);
+
+        gtk_label_set_line_wrap(GTK_LABEL(lic), TRUE);
+        gtk_label_set_max_width_chars(GTK_LABEL(lic), 56);
+        gtk_label_set_justify(GTK_LABEL(lic), GTK_JUSTIFY_CENTER);
+        gtk_label_set_xalign(GTK_LABEL(lic), 0.5);
+        gtk_widget_set_halign(lic, GTK_ALIGN_CENTER);
+        gtk_style_context_add_class(
+            gtk_widget_get_style_context(lic), "pg-about-body");
+        gtk_box_pack_start(GTK_BOX(col), lic, FALSE, FALSE, 0);
+    }
+
+    {
+        GtkWidget *link = gtk_link_button_new(POWERGOV_SOURCE_URL);
+
+        gtk_link_button_set_uri(GTK_LINK_BUTTON(link), POWERGOV_SOURCE_URL);
+        gtk_button_set_label(GTK_BUTTON(link), POWERGOV_SOURCE_URL);
+        gtk_widget_set_halign(link, GTK_ALIGN_CENTER);
+        gtk_box_pack_start(GTK_BOX(col), link, FALSE, FALSE, 8);
+    }
+
+    snprintf(author_line, sizeof(author_line),
+             "Escrito por %s.", POWERGOV_AUTHOR_NAME);
+    {
+        GtkWidget *author = gtk_label_new(author_line);
+
+        gtk_label_set_xalign(GTK_LABEL(author), 0.5);
+        gtk_widget_set_halign(author, GTK_ALIGN_CENTER);
+        gtk_style_context_add_class(
+            gtk_widget_get_style_context(author), "pg-about-author");
+        gtk_box_pack_start(GTK_BOX(col), author, FALSE, FALSE, 0);
+    }
+
+    {
+        GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+
+        gtk_widget_set_margin_top(sep, 16);
+        gtk_box_pack_start(GTK_BOX(col), sep, FALSE, FALSE, 0);
+    }
+
+    ctx->about_service_label = gtk_label_new(_(PG_TR_ABOUT_SERVICE_OFF));
+    gtk_label_set_xalign(GTK_LABEL(ctx->about_service_label), 0.5);
+    gtk_widget_set_halign(ctx->about_service_label, GTK_ALIGN_CENTER);
+    gtk_style_context_add_class(
+        gtk_widget_get_style_context(ctx->about_service_label),
+        "pg-about-service");
+    gtk_box_pack_start(GTK_BOX(col), ctx->about_service_label, FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(outer), col, FALSE, FALSE, 0);
+    gtk_container_add(GTK_CONTAINER(scroll), outer);
+    return scroll;
+}
+
+static void update_about_service_label(AppCtx *ctx, const char *daemon_ver,
+                                       int daemon_up)
+{
+    char line[128];
+
+    if (!ctx || !ctx->about_service_label)
+        return;
+
+    if (daemon_up && daemon_ver && daemon_ver[0])
+    {
+        snprintf(line, sizeof(line), _(PG_TR_ABOUT_SERVICE_FMT), daemon_ver);
+        gtk_label_set_text(GTK_LABEL(ctx->about_service_label), line);
+    }
+    else
+        gtk_label_set_text(GTK_LABEL(ctx->about_service_label),
+                           _(PG_TR_ABOUT_SERVICE_OFF));
 }
 
 static GtkWidget *make_features_page(AppCtx *ctx);
@@ -3287,6 +3455,7 @@ static void build_ui(AppCtx *ctx)
     ctx->log_view = NULL;
     ctx->features_page = NULL;
     ctx->tlp_banner = NULL;
+    ctx->about_service_label = NULL;
     dev_pages[0] = make_scrolled_text(&ctx->sys_view);
     dev_pages[1] = make_scrolled_text(&ctx->cpu_view);
     dev_pages[2] = make_scrolled_text(&ctx->compat_view);
@@ -3478,6 +3647,9 @@ static void build_ui(AppCtx *ctx)
     gtk_box_pack_start(GTK_BOX(dev_tab_page), ctx->dev_notebook, TRUE, TRUE, 0);
     gtk_notebook_append_page(GTK_NOTEBOOK(ctx->main_notebook), dev_tab_page,
                              gtk_label_new(_(PG_TR_TAB_DIAGNOSTIC)));
+    gtk_notebook_append_page(GTK_NOTEBOOK(ctx->main_notebook),
+                             make_about_page(ctx),
+                             gtk_label_new(_(PG_TR_TAB_ABOUT)));
 
     gtk_box_pack_start(GTK_BOX(vbox), ctx->main_notebook, TRUE, TRUE, 0);
 
@@ -3529,7 +3701,13 @@ int main(int argc, char **argv)
     AppCtx ctx;
     int i;
 
-    (void)argv;
+    if (argc >= 2 &&
+        (strcmp(argv[1], "-v") == 0 || strcmp(argv[1], "--version") == 0))
+    {
+        powergov_print_version_for(POWERGOV_UI_PROGRAM);
+        return 0;
+    }
+
     memset(&ctx, 0, sizeof(ctx));
     for (i = 0; i < 3; i++)
         ctx.periph_pending[i] = -1;

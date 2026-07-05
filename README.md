@@ -1,8 +1,8 @@
 # powergov
 
-**Modular laptop power management for Linux** — a lightweight userspace daemon that coordinates CPU governors, EPP, turbo, frequency caps, ACPI platform profile, PCI/USB runtime PM, and optional peripheral power saving (WiFi, SATA link power, audio codecs). Includes a **GTK 3 desktop UI** and an **AppImage** for end users.
+**Modular laptop power management for Linux** — a lightweight userspace daemon that coordinates CPU governors, EPP, turbo, frequency caps, ACPI platform profile, PCI/USB runtime PM, disk APM/ALPM, PCIe ASPM, Bluetooth power save, and WiFi/audio peripherals. Policy is **reactive** (CPU load + mode + battery → `device_aggression` 0–3), not fixed AC/BAT rules like TLP. Includes **GTK 3 UI** and **AppImage**.
 
-Current release: **1.10.0** (`VERSION`).
+Current release: **1.11.0** (`VERSION`).
 
 ## What it does
 
@@ -17,9 +17,21 @@ powergov monitors CPU load (200 ms sample, 2 s policy tick) and power source (AC
 
 Subsytems are individually enable/disable via `FEATURES` in `/etc/powergov.conf` or `powergov feature <name> on|off`.
 
+### vs TLP (philosophy)
+
+| | **TLP** | **powergov** |
+|--|---------|--------------|
+| Model | Static AC/BAT profiles | **Reactive** `device_aggression` from load + gov state |
+| Config | Large `tlp.conf` | Modes + feature toggles; tuning in Dev UI |
+| Device PM | Always on BAT profile | Relaxes when load rises (BALANCED/PERFORMANCE) |
+| Coexistence | — | Defers device PM to TLP when TLP active; viable **alternative** when TLP off |
+
+Benchmark: `scripts/bench-battery-session.sh powergov|tlp`.
+
 ## Desktop UI (`powergov-ui`)
 
 - **User tab:** profile selection, battery-safe threshold, status summary, install/uninstall service, update check (GitHub Releases).
+- **About tab:** version (same layout as `pack -v` / `powergov -v`), license, source link, daemon service version.
 - **Dev tab (Polkit):** metrics, log tail, feature toggles, tuning thresholds, peripheral checkboxes (custom mode, on demand).
 - **System tray:** closing the window hides to tray (lightning icon); `POWERGOV_NO_TRAY=1` disables tray behaviour.
 - **i18n:** English default; Spanish when `LANG`/`LC_MESSAGES` starts with `es`, or via EN/ES toggle.
@@ -30,13 +42,13 @@ Requires the **daemon** running (`systemd` or `sudo powergov on`). The AppImage 
 ## Quick start (AppImage — recommended)
 
 ```bash
-chmod +x PowerGov-1.10.0-x86_64.AppImage
-./PowerGov-1.10.0-x86_64.AppImage
+chmod +x PowerGov-1.11.0-x86_64.AppImage
+./PowerGov-1.11.0-x86_64.AppImage
 ```
 
 On first launch: menu/desktop entry, language detection, optional one-time service install. Updates install to `~/.local/share/powergov/PowerGov.AppImage` without duplicate copies in Downloads.
 
-Download from [GitHub Releases](https://github.com/ivanrwcm25/powergov/releases) (tag `v1.10.0`).
+Download from [GitHub Releases](https://github.com/ivanrwcm25/powergov/releases) (tag `v1.11.0`).
 
 ## Quick start (from source)
 
@@ -60,7 +72,7 @@ powergov-ui
 | Tool | powergov behaviour |
 |------|-------------------|
 | **power-profiles-daemon** | Detected automatically; **platform_profile** control is skipped to avoid conflicting writes. CPU/EPP/turbo/runtime PM remain active unless disabled. |
-| **TLP** | When TLP is active, powergov **does not apply** `runtime_pm` or `peripheral_pm` (UI shows a warning). CPU/platform features can still run — configure only one primary owner for overlapping sysfs nodes. |
+| **TLP** | When TLP is active, powergov **defers** `runtime_pm`, `peripheral_pm`, `disk_pm`, `pcie_aspm`, `bluetooth_pm`. Use powergov alone for full device PM stack. |
 
 See `platform/tlp_compat.c` and `Documentation/operacion.md`.
 
@@ -70,7 +82,7 @@ See `platform/tlp_compat.c` and `Documentation/operacion.md`.
 sudo powergov on | off
 powergov status
 sudo powergov mode max-battery|balanced|performance|custom
-sudo powergov feature governor|epp|freq_cap|turbo|platform|runtime_pm|peripheral_pm on|off
+sudo powergov feature governor|epp|freq_cap|turbo|platform|runtime_pm|peripheral_pm|disk_pm|pcie_aspm|bluetooth_pm on|off
 sudo powergov --battery-safe 30    # 0 = off
 powergov dev-metrics               # apply/verify counters
 sudo powergov dev-log --tail 50
@@ -95,7 +107,7 @@ powergov/
 ├── core/                  # loop, sysfs, info, socket protocol
 ├── cpu/                   # governor, epp, freq_cap, turbo
 ├── platform/              # ACPI platform_profile, TLP detection
-├── devices/               # runtime_pm, peripheral_pm (WiFi/SATA/audio)
+├── devices/               # runtime_pm, peripheral_pm, disk_pm, pcie_aspm, bluetooth_pm
 ├── power/                 # battery/AC, effective profile
 ├── config/                # /etc/powergov.conf parser
 ├── client/                # libpowergov.so (UI + tools)
