@@ -1,4 +1,4 @@
-.TH POWERGOV 8 "July 2026" "powergov 1.11.0" "System Administration"
+.TH POWERGOV 8 "July 2026" "powergov 1.13.0" "System Administration"
 .SH NAME
 powergov \- systemd service for modular laptop power management
 .SH SYNOPSIS
@@ -12,8 +12,8 @@ is a
 unit that starts
 .BR powergov (1)
 at boot. The daemon evaluates CPU load every two seconds (with 200 ms sampling
-for utilization), reads battery/AC state from
-.IR /sys/class/power_supply/ ,
+for utilization), reads battery/AC state and context (lid, session idle hint)
+from sysfs and logind on an adaptive schedule (more frequent on battery),
 computes an effective policy from user mode and hardware context, and applies
 changes only when the policy differs from the previous tick.
 .PP
@@ -97,6 +97,13 @@ Bluetooth HCI runtime power when aggression ≥2 on battery.
 .TP
 .B peripheral_pm
 WiFi (iw) and audio codec power_save.
+.TP
+.B Context (v1.13)
+Optional boost of
+.B device_aggression
+when lid is closed or logind reports session idle, subject to low CPU load
+thresholds configured in
+.IR powergov.conf .
 .SH INTERACTION WITH OTHER TOOLS
 If
 .B power-profiles-daemon
@@ -168,6 +175,8 @@ Developer metrics snapshot.
 Developer log (when enabled).
 .SH SEE ALSO
 .BR powergov (1),
+.BR powergov-ui (1),
+.BR powergov.conf (5),
 .BR systemd.service (5),
 .BR systemd.unit (5),
 .BR tlp (8),

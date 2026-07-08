@@ -29,7 +29,7 @@ static int read_cpu_times(unsigned long long *idle,
         return -1;
     }
 
-    *idle = idle_t + io_wait;
+    *idle = idle_t;
     *total = user + nice + system + idle_t + io_wait + irq + softirq;
     fclose(fp);
     return 0;

@@ -1,6 +1,6 @@
 # Operación
 
-> **Última verificación:** 2026-07-05  
+> **Última verificación:** 2026-07-08  
 > **Fuente de verdad:** `Makefile`, `service/powergov.service`, `main.c`, `core/loop.c`
 
 ## Requisitos
@@ -13,7 +13,7 @@
 
 ```bash
 make                    # genera ./powergov
-sudo make install       # /usr/local/bin/powergov + man + completions
+sudo make install       # /usr/local/bin/powergov + man (1, 5, 8) + completions
 sudo make install-service   # + /etc/powergov.conf + systemd unit + enable + start
 ```
 
@@ -57,6 +57,7 @@ sudo powergov off
 ```bash
 powergov status
 # Esperado: State, CPU load, Power (AC/battery), Battery %, EPP, Turbo, User mode, Features
+# En QUERY_STATUS / UI Información: lid, session_idle (si logind disponible)
 
 sudo powergov on &
 sleep 6
@@ -88,7 +89,7 @@ En `dev-metrics`, comprobar que los subsistemas habilitados muestran `verify_ok`
 - Build: `make appimage` → `dist/PowerGov-<version>-x86_64.AppImage`
 - Instalación usuario: `~/.local/share/powergov/PowerGov.AppImage` (sobrescribe; sin copias versionadas duplicadas en Descargas)
 - Atajos: `$XDG_DESKTOP_DIR` vía `scripts/powergov-xdg-paths.sh`
-- Release: `make release` (tarball + AppImage a GitHub Releases con `gh`)
+- Release actual: **v1.13.0** — `make release` (tarball + AppImage a GitHub Releases con `gh`)
 - Benchmark batería: `scripts/bench-battery-session.sh powergov|tlp|baseline`
 
 ## Permisos de log

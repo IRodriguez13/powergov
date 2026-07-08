@@ -1,11 +1,11 @@
 # Métricas y logging (desarrollo)
 
-> **Última verificación:** 2026-07-04  
+> **Última verificación:** 2026-07-08  
 > **Fuente de verdad:** `metrics/metrics.c`, `log/log.c`, `main.c` (comandos `dev-*`)
 
 ## Objetivo
 
-Garantizar que powergov **solo toca lo que debe** y que las escrituras sysfs **coinciden** con lo pedido. Orientado a desarrollo y validación en hardware real; no es UI de usuario final.
+Garantizar que powergov **solo toca lo que debe** y que las escrituras sysfs **coinciden** con lo pedido. Los comandos `dev-*` y la pestaña Información de la UI exponen diagnóstico; no sustituyen herramientas de benchmark de autonomía.
 
 ## Métricas en runtime
 
@@ -39,7 +39,7 @@ rapl_watts_est=8.450
 | `*_verify_ok` | Relectura coincide con objetivo |
 | `*_verify_fail` | Relectura difiere (investigar driver/ppd/TLP) |
 
-Features: `governor`, `epp`, `freq_cap`, `turbo`, `platform`, `runtime_pm`.
+Features: `governor`, `epp`, `freq_cap`, `turbo`, `platform`, `runtime_pm`, `peripheral_pm`, `disk_pm`, `pcie_aspm`, `bluetooth_pm`.
 
 ### Comando CLI
 

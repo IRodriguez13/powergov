@@ -34,6 +34,8 @@ typedef struct
     int tlp_detected;
     int lid_state;
     int session_idle;
+    int memory_stressed;
+    int memory_severe;
 } powergov_reply_system_t;
 
 typedef struct

@@ -42,23 +42,20 @@ NOTES="$(cat <<EOF
 
 **No hace falta compilar nada** para usar el AppImage.
 
-### Cambios en ${VERSION} — contexto idle, tuning y UI reactiva
+### Cambios en ${VERSION} — memoria consciente y UI diagnóstico rápido
 
 #### Daemon y política
-- **Context boost** (\`apply_context_aggression_boost\`): sube \`device_aggression\` a 3 y activa runtime PM agresivo en batería cuando la tapa está cerrada (\`lid_aggressive\`) o la sesión está idle (\`display_aggressive\`), respetando \`context_require_low_load\` y el umbral de carga CPU.
-- **session_idle**: lectura de \`IdleHint\` vía \`busctl\` (logind) con fallback \`loginctl show-session self\`.
-- **lid_state**: detección de tapa cerrada desde sysfs/input.
-- **Poll adaptativo de batería**: refresco cada 5 ticks en batería vs 30 en AC (\`POWERGOV_BATTERY_REFRESH\` / \`POWERGOV_BATTERY_REFRESH_AC\`).
-- **Skip de apply redundante**: el loop solo reaplica política cuando \`policy_changed\` o cambia la máscara de features.
+- **Memory-aware** (\`MEMORY_AWARE=1\`): PSI memory, swap y **iowait** como carga efectiva; suelo \`BALANCED\` y tope de device PM bajo presión (no apretar más si el sistema ahoga).
+- **Context boost** (tapa/idle) bloqueado bajo presión memoria.
+- **Socket responsivo**: el daemon atiende el socket Unix durante el sleep inter-tick (~100 ms), no solo cada 2 s.
 
 #### UI GTK
-- Cache **optimista pending** en checkboxes de features opcionales, tuning de tapa/pantalla y periféricos (mismo patrón \`pg-periph-pending\`): feedback inmediato mientras el daemon confirma.
-- Pestaña Diagnóstico: estado de tapa y sesión idle.
-- Tuning: \`lid_aggressive\`, \`display_aggressive\`, periféricos WiFi/SATA/audio.
-- Eliminado modo Dev de la UI (v1.12); métricas/logs solo vía socket para diagnóstico avanzado.
+- Pestañas Compat / Métricas / Log: **«Cargando…»** inmediato, cola de refresh si hay petición en vuelo, mensaje de error si falla el socket.
+- Estado de presión de memoria en Información → Sistema.
+- Cache pending en checkboxes (features/tapa/pantalla).
 
-#### Herramientas
-- \`scripts/bench-battery-session.sh\`: benchmark comparativo powergov vs TLP en batería (host).
+#### Documentación
+- \`Documentation/memory-aware.md\`, \`contexto-reactivo.md\`, mandocs \`powergov-ui.1\` y \`powergov.conf.5\`.
 
 #### Empaquetado
 - AppImage: instalación estable en \`~/.local/share/powergov/PowerGov.AppImage\`.
@@ -75,8 +72,7 @@ Requiere: \`build-essential pkg-config libgtk-3-dev zenity\`.
 
 ### Documentación
 
-- README, \`Documentation/\` y mandocs actualizados (TLP, device_aggression, nuevas features).
-- \`man powergov\` / \`man 8 powergov\`.
+- \`man powergov\`, \`man powergov-ui\`, \`man 5 powergov.conf\`, \`man 8 powergov\`.
 
 ### Notas
 

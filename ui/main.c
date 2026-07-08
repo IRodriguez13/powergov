@@ -168,6 +168,7 @@ struct _AppCtx
     int dev_log_initialized;
     int metrics_initialized;
     int refresh_busy;
+    int refresh_pending;
     int ui_sync;
     int ui_action_inflight;
     int feature_pending[POWERGOV_FEATURE_COUNT];
@@ -498,6 +499,8 @@ static void on_daemon_upgrade_install(gpointer data);
 static int prompt_install_service(AppCtx *ctx);
 static int ensure_daemon_for_action(AppCtx *ctx);
 static void refresh_async(AppCtx *ctx);
+static void refresh_schedule(AppCtx *ctx);
+static void show_dev_tab_loading(AppCtx *ctx, int tab);
 static void refresh_timer_start(AppCtx *ctx);
 static void refresh_timer_stop(AppCtx *ctx);
 static void show_main_window(AppCtx *ctx);
@@ -738,6 +741,18 @@ static void refresh_timer_start(AppCtx *ctx)
     ctx->timer_id = g_timeout_add(REFRESH_MS_FOCUSED, on_timer, ctx);
 }
 
+static void refresh_schedule(AppCtx *ctx)
+{
+    if (!ctx)
+        return;
+    if (ctx->refresh_busy)
+    {
+        ctx->refresh_pending = 1;
+        return;
+    }
+    refresh_async(ctx);
+}
+
 static const char *lid_state_label(int lid_state)
 {
     if (lid_state == 1)
@@ -754,6 +769,15 @@ static const char *session_idle_label(int session_idle)
     if (session_idle == 0)
         return _(PG_TR_SESSION_ACTIVE);
     return _(PG_TR_SESSION_UNKNOWN);
+}
+
+static const char *memory_pressure_label(int stressed, int severe)
+{
+    if (severe)
+        return _(PG_TR_MEM_PRESSURE_SEVERE);
+    if (stressed)
+        return _(PG_TR_MEM_PRESSURE_STRESSED);
+    return _(PG_TR_MEM_PRESSURE_OK);
 }
 
 static int ui_tlp_blocks_feature(int feature_id)
@@ -1175,7 +1199,7 @@ static void show_main_window(AppCtx *ctx)
     gtk_widget_show_all(ctx->window);
     gtk_window_present(GTK_WINDOW(ctx->window));
     ctx->window_focused = 1;
-    refresh_async(ctx);
+    refresh_schedule(ctx);
     refresh_timer_start(ctx);
 }
 
@@ -1312,7 +1336,7 @@ static gboolean on_window_focus_in(GtkWidget *widget, GdkEventFocus *event,
     (void)event;
 
     ctx->window_focused = 1;
-    refresh_async(ctx);
+    refresh_schedule(ctx);
     refresh_timer_start(ctx);
     return FALSE;
 }
@@ -1340,7 +1364,11 @@ static void on_main_tab_switch(GtkNotebook *notebook, GtkWidget *page,
 
     ctx->main_tab_current = (int)page_num;
     if (ctx->window_focused)
-        refresh_async(ctx);
+    {
+        if (page_num == (guint)PG_MAIN_TAB_DIAG)
+            show_dev_tab_loading(ctx, ctx->dev_tab_current);
+        refresh_schedule(ctx);
+    }
 }
 
 static void on_dev_tab_switch(GtkNotebook *notebook, GtkWidget *page,
@@ -1353,7 +1381,10 @@ static void on_dev_tab_switch(GtkNotebook *notebook, GtkWidget *page,
 
     ctx->dev_tab_current = (int)page_num;
     if (ctx->window_focused)
-        refresh_async(ctx);
+    {
+        show_dev_tab_loading(ctx, (int)page_num);
+        refresh_schedule(ctx);
+    }
 }
 
 static void fill_text_view(GtkWidget *view, const char *text)
@@ -1364,6 +1395,30 @@ static void fill_text_view(GtkWidget *view, const char *text)
         return;
     buf = gtk_text_view_get_buffer(GTK_TEXT_VIEW(view));
     gtk_text_buffer_set_text(buf, text ? text : "", -1);
+}
+
+static GtkWidget *dev_tab_text_view(const AppCtx *ctx, int tab)
+{
+    if (!ctx)
+        return NULL;
+    switch (tab)
+    {
+    case 0: return ctx->sys_view;
+    case 1: return ctx->cpu_view;
+    case 2: return ctx->compat_view;
+    case 3: return ctx->metrics_view;
+    case 4: return ctx->log_view;
+    default: return NULL;
+    }
+}
+
+static void show_dev_tab_loading(AppCtx *ctx, int tab)
+{
+    GtkWidget *view = dev_tab_text_view(ctx, tab);
+
+    if (!view)
+        return;
+    fill_text_view(view, _(PG_TR_LOADING));
 }
 
 static GtkAdjustment *text_view_vadj(GtkWidget *view)
@@ -2072,7 +2127,9 @@ static void apply_dev_panels(AppCtx *ctx, const UiSnapshot *s)
                  s->sys.ppd_detected ? _(PG_TR_YES) : _(PG_TR_NO),
                  s->sys.tlp_detected ? _(PG_TR_YES) : _(PG_TR_NO),
                  lid_state_label(s->sys.lid_state),
-                 session_idle_label(s->sys.session_idle));
+                 session_idle_label(s->sys.session_idle),
+                 memory_pressure_label(s->sys.memory_stressed,
+                                       s->sys.memory_severe));
         fill_text_view(ctx->sys_view, block);
     }
 
@@ -2121,6 +2178,8 @@ static void apply_dev_panels(AppCtx *ctx, const UiSnapshot *s)
         }
         fill_text_view(ctx->compat_view, block);
     }
+    else if (s->fetch_dev_mask & POWERGOV_BUNDLE_COMPAT)
+        fill_text_view(ctx->compat_view, _(PG_TR_DIAG_FETCH_FAIL));
 
     if (s->metrics_ok)
     {
@@ -2130,6 +2189,8 @@ static void apply_dev_panels(AppCtx *ctx, const UiSnapshot *s)
                                sizeof(ctx->metrics_last_snapshot),
                                &ctx->metrics_initialized);
     }
+    else if (s->fetch_dev_mask & POWERGOV_BUNDLE_METRICS)
+        fill_text_view(ctx->metrics_view, _(PG_TR_DIAG_FETCH_FAIL));
 
     if (s->log_ok)
     {
@@ -2144,6 +2205,8 @@ static void apply_dev_panels(AppCtx *ctx, const UiSnapshot *s)
             update_dev_log_view(ctx, msg);
         }
     }
+    else if (s->fetch_dev_mask & POWERGOV_BUNDLE_LOG)
+        fill_text_view(ctx->log_view, _(PG_TR_DIAG_FETCH_FAIL));
 }
 
 static void snapshot_note_daemon_version(UiSnapshot *s, int api_too_old)
@@ -2424,6 +2487,12 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
     g_strlcpy(ctx->daemon_version, s->daemon_version, sizeof(ctx->daemon_version));
     update_about_service_label(ctx, ctx->daemon_version, 1);
 
+    if (ctx->refresh_pending)
+    {
+        ctx->refresh_pending = 0;
+        g_idle_add(refresh_async_idle, ctx);
+    }
+
     g_free(s);
 }
 
@@ -2559,8 +2628,13 @@ static void snapshot_done(GObject *src, GAsyncResult *res, gpointer data)
     s = g_task_propagate_pointer(G_TASK(res), &err);
     if (!s)
     {
+        int pending = ctx->refresh_pending;
+
         ctx->refresh_busy = 0;
+        ctx->refresh_pending = 0;
         g_clear_error(&err);
+        if (pending)
+            g_idle_add(refresh_async_idle, ctx);
         return;
     }
     apply_snapshot(ctx, s);
@@ -2851,7 +2925,7 @@ static void run_user_action_async(AppCtx *ctx, UiActionResult *r)
 
 static gboolean on_timer(gpointer data)
 {
-    refresh_async((AppCtx *)data);
+    refresh_schedule((AppCtx *)data);
     return G_SOURCE_CONTINUE;
 }
 

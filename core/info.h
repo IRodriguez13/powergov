@@ -6,7 +6,8 @@
 
 void powergov_info_fill_status(const powergov_config_t *cfg,
                                powergov_reply_status_t *out);
-void powergov_info_fill_system(powergov_reply_system_t *out);
+void powergov_info_fill_system(const powergov_config_t *cfg,
+                               powergov_reply_system_t *out);
 void powergov_info_fill_cpu(powergov_reply_cpu_t *out);
 void powergov_info_fill_compat(const powergov_config_t *cfg,
                                powergov_reply_compat_t *out);

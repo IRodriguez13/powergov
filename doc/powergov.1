@@ -1,4 +1,4 @@
-.TH POWERGOV 1 "July 2026" "powergov 1.11.0" "User Commands"
+.TH POWERGOV 1 "July 2026" "powergov 1.13.0" "User Commands"
 .SH NAME
 powergov \- modular laptop power policy daemon for Linux
 .SH SYNOPSIS
@@ -87,7 +87,9 @@ Enable or disable a subsystem
 .PP
 Device layers use a reactive
 .B device_aggression
-level (0–3) derived from CPU governor state, user mode, and battery SOC — unlike static AC/BAT profiles in tools such as TLP.
+level (0–3) derived from CPU governor state, user mode, battery SOC, and
+optional context triggers (closed lid, session idle via logind) — unlike static
+AC/BAT profiles in tools such as TLP.
 .TP
 .B features list
 List available feature names.
@@ -146,8 +148,15 @@ is enabled.
 .BR CUSTOM_RUNTIME_AGGRESSIVE
 Fine-grained custom mode behaviour (see
 .IR Documentation/configuracion.md ).
+.TP
+.B LID_AGGRESSIVE
+.BR DISPLAY_AGGRESSIVE
+.BR CONTEXT_REQUIRE_LOW_LOAD
+.BR CONTEXT_LOW_LOAD_PCT
+Context-reactive device PM boost on battery (see
+.IR Documentation/contexto-reactivo.md ).
 .PP
-Runtime tuning (thresholds, peripherals) is also available via the control socket
+Runtime tuning (thresholds, peripherals, context) is also available via the control socket
 (commands
 .B SET_TUNING
 and
@@ -215,9 +224,13 @@ Set battery-safe threshold to 30%:
 is a GTK 3 application using the same control socket. Install with
 .BR "make install-ui" .
 AppImage builds bundle the UI for end users; see
-.IR ui/README.md .
+.IR ui/README.md
+and
+.BR powergov-ui (1).
 .SH SEE ALSO
 .BR powergov (8),
+.BR powergov-ui (1),
+.BR powergov.conf (5),
 .BR systemd (1),
 .BR cpupower (1),
 .BR iw (8),

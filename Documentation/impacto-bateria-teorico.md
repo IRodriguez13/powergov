@@ -1,15 +1,15 @@
 # Impacto teórico en autonomía
 
-> **Última verificación:** 2026-07-04  
-> **Fuente de verdad:** módulos en `cpu/`, `power/profile.c`, `devices/runtime_pm.c` — análisis estático, no benchmark publicado del proyecto
+> **Última verificación:** 2026-07-08  
+> **Fuente de verdad:** módulos en `cpu/`, `power/profile.c`, `devices/*.c` — análisis estático, no benchmark publicado del proyecto
 
 ## Alcance de powergov
 
-powergov actúa sobre **CPU (governor, EPP, turbo, techo de frecuencia)**, **perfil de plataforma ACPI** (si no hay ppd) y **runtime PM PCI/USB**.
+powergov actúa sobre **CPU (governor, EPP, turbo, techo de frecuencia)**, **perfil de plataforma ACPI** (si no hay ppd), **runtime PM PCI/USB**, **discos (APM/ALPM/NVMe)**, **PCIe ASPM**, **Bluetooth** y **periféricos WiFi/audio** (modo custom).
 
-**No controla:** pantalla/backlight, WiFi, GPU discreta, procesos userspace.
+**No controla:** backlight directamente, GPU discreta, procesos userspace.
 
-Por tanto el techo de mejora está acotado por la fracción del consumo total que representan esos subsistemas (típicamente **~25–45%** del total en uso mixto, variable por hardware).
+Por tanto el techo de mejora está acotado por la fracción del consumo total que representan esos subsistemas (típicamente **~25–50%** del total en uso mixto, variable por hardware).
 
 ## Ahorro por palanca (orden de magnitud)
 
@@ -23,6 +23,9 @@ Estimaciones estáticas vs Linux con `schedutil` pero sin política agresiva en 
 | Freq cap ~80% | 3–8% en carga media |
 | platform_profile low-power | 0–8% (OEM) |
 | runtime PM PCI/USB | 2–5% |
+| disk APM / SATA ALPM / NVMe | 1–4% |
+| PCIe ASPM powersave | 0–3% |
+| Context boost (tapa + idle, v1.13) | 1–5% incremental en escenarios idle/cerrado |
 
 Los efectos **no se suman linealmente** (solapamiento en la curva CPU).
 
@@ -30,7 +33,7 @@ Los efectos **no se suman linealmente** (solapamiento en la curva CPU).
 
 | Uso | Ganancia teórica `max-battery` vs baseline permisivo |
 |-----|------------------------------------------------------|
-| Idle / lectura | 3–8% |
+| Idle / lectura (tapa cerrada o sesión idle) | 5–12% |
 | Navegación / ofimática | 8–18% |
 | Desarrollo (picos, builds cortos) | 10–22% |
 | Carga sostenida pesada | 3–10% |

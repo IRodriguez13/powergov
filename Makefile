@@ -24,6 +24,7 @@ SRC = main.c \
       power/profile.c \
       power/lid_state.c \
       power/session_idle.c \
+      power/memory_pressure.c \
       platform/platform_profile.c \
       platform/tlp_compat.c \
       devices/runtime_pm.c \
@@ -49,11 +50,13 @@ STAGING_DIR = .staging/install
 CONF_DIR = /etc
 CONF_FILE = $(CONF_DIR)/powergov.conf
 SYSTEMD_UNIT = /etc/systemd/system/powergov.service
-MAN1 = doc/powergov.1
+MAN1 = doc/powergov.1 doc/powergov-ui.1
+MAN5 = doc/powergov.conf.5
 MAN8 = doc/powergov.8
 BASH_COMP = completions/bash/powergov
 ZSH_COMP = completions/zsh/_powergov
 MAN1_DIR = /usr/local/share/man/man1
+MAN5_DIR = /usr/local/share/man/man5
 MAN8_DIR = /usr/local/share/man/man8
 BASH_COMP_DIR = /usr/share/bash-completion/completions
 BASH_COMP_LEGACY_DIR = /etc/bash_completion.d
@@ -146,7 +149,9 @@ install-bin:
 	fi
 
 install-man:
-	install -D -m 644 $(MAN1) $(MAN1_DIR)/powergov.1
+	install -D -m 644 doc/powergov.1 $(MAN1_DIR)/powergov.1
+	install -D -m 644 doc/powergov-ui.1 $(MAN1_DIR)/powergov-ui.1
+	install -D -m 644 $(MAN5) $(MAN5_DIR)/powergov.conf.5
 	install -D -m 644 $(MAN8) $(MAN8_DIR)/powergov.8
 	-@if command -v mandb >/dev/null 2>&1; then mandb -q; fi
 
@@ -178,7 +183,8 @@ uninstall: stop uninstall-service uninstall-docs
 	rm -f /usr/local/bin/$(TARGET)
 
 uninstall-docs:
-	rm -f $(MAN1_DIR)/powergov.1 $(MAN8_DIR)/powergov.8
+	rm -f $(MAN1_DIR)/powergov.1 $(MAN1_DIR)/powergov-ui.1
+	rm -f $(MAN5_DIR)/powergov.conf.5 $(MAN8_DIR)/powergov.8
 	rm -f $(BASH_COMP_DIR)/powergov $(BASH_COMP_LEGACY_DIR)/powergov $(ZSH_COMP_DIR)/_powergov
 	-@if command -v mandb >/dev/null 2>&1; then mandb -q; fi
 

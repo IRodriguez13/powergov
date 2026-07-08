@@ -1,0 +1,113 @@
+.TH POWERGOV-UI 1 "July 2026" "powergov 1.13.0" "User Commands"
+.SH NAME
+powergov-ui \- GTK desktop client for the powergov power daemon
+.SH SYNOPSIS
+.B powergov-ui
+.RB [ \-v | \-\-version ]
+.RB [ \-h | \-\-help ]
+.SH DESCRIPTION
+.B powergov-ui
+is a GTK 3 application that controls the
+.BR powergov (1)
+daemon through the Unix domain socket at
+.IR /run/powergov/powergov.sock .
+It is intended for laptop users who prefer a graphical interface over the CLI.
+.PP
+The main window provides:
+.TP
+.B User
+User modes (max-battery, balanced, performance), battery-safe threshold slider,
+live status, and optional one-time installation of the systemd backend.
+.TP
+.B Information
+System context (power source, battery, lid state, session idle hint),
+compatibility notes (TLP, power-profiles-daemon), metrics and log viewers,
+feature toggles, custom-mode tuning, and context options (lid/display aggression).
+.TP
+.B About
+Version strings for UI and daemon (same format as
+.BR "powergov \-v" ),
+GPLv3 notice, and project link.
+.PP
+Closing the window with the title-bar
+.B X
+hides the application to the **system tray** (lightning icon) unless
+.B POWERGOV_NO_TRAY=1
+is set, in which case
+.B X
+exits the process.
+.PP
+Optional feature and tuning checkboxes use an **optimistic pending** state:
+the UI reflects the user's choice immediately while the daemon applies and
+confirms the change asynchronously.
+.SH OPTIONS
+.TP
+.B \-v
+.TP
+.B \-\-version
+Print version and licensing banner, then exit.
+.TP
+.B \-h
+.TP
+.B \-\-help
+Print brief usage and exit.
+.SH ENVIRONMENT
+.TP
+.B POWERGOV_NO_TRAY=1
+Disable system tray; closing the window terminates the UI.
+.TP
+.B POWERGOV_FG=1
+Run in foreground (used by AppImage / desktop entry).
+.TP
+.B LANG
+.B LC_MESSAGES
+.B LANGUAGE
+If any starts with
+.BR es ,
+the UI defaults to Spanish; otherwise English. An EN/ES toggle is available
+in the title bar.
+.TP
+.B PG_UPDATE_CHECK_DELAY_MS
+Milliseconds before checking GitHub Releases for updates (default 5000).
+.SH FILES
+.TP
+.I /run/powergov/powergov.sock
+Control socket shared with
+.BR powergov (1) .
+.TP
+.I ~/.local/share/powergov/PowerGov.AppImage
+Stable install path used by the AppImage updater.
+.TP
+.I /usr/local/share/applications/powergov-ui.desktop
+Desktop entry when installed from source.
+.SH REQUIREMENTS
+The
+.B powergov
+daemon must be running (typically
+.BR "systemctl start powergov" ).
+Without the daemon, the UI can offer to install or start the service (Polkit
+prompt for administrator password).
+.SH EXAMPLES
+.TP
+Run from a source build:
+.RS
+.B ./powergov-ui
+.RE
+.TP
+Spanish locale:
+.RS
+.B LANG=es_ES.UTF-8 powergov-ui
+.RE
+.TP
+No system tray:
+.RS
+.B POWERGOV_NO_TRAY=1 powergov-ui
+.RE
+.SH SEE ALSO
+.BR powergov (1),
+.BR powergov (8),
+.BR powergov.conf (5),
+.IR ui/README.md
+in the source tree.
+.SH AUTHOR
+Iván Ezequiel Rodriguez.

@@ -28,6 +28,12 @@ static const char *const g_es[PG_TR_COUNT] =
     [PG_TR_SESSION_ACTIVE] = "Sesión: activa",
     [PG_TR_SESSION_IDLE] = "Sesión: idle (pantalla apagada)",
     [PG_TR_SESSION_UNKNOWN] = "Sesión: idle no detectada",
+    [PG_TR_MEM_PRESSURE_OK] = "Memoria: sin presión",
+    [PG_TR_MEM_PRESSURE_STRESSED] = "Memoria: presión (no se aprieta más)",
+    [PG_TR_MEM_PRESSURE_SEVERE] = "Memoria: presión alta (ahorro device reducido)",
+    [PG_TR_LOADING] = "Cargando…",
+    [PG_TR_DIAG_FETCH_FAIL] =
+        "No se pudo leer del daemon. Reintentá en unos segundos.",
     [PG_TR_ABOUT_SERVICE_FMT] = "Servicio (powergov): %s",
     [PG_TR_ABOUT_SERVICE_OFF] = "Servicio (powergov): no en ejecución",
     [PG_TR_TAB_SYSTEM] = "Sistema",
@@ -139,7 +145,7 @@ static const char *const g_es[PG_TR_COUNT] =
     [PG_TR_NO_LOG] = "(sin log)",
     [PG_TR_SYS_FMT] =
         "SO: %s\nKernel: %s\npowergov: %s\nsystemd: %s\nPPD activo: %s\n"
-        "TLP activo: %s\n%s\n%s",
+        "TLP activo: %s\n%s\n%s\n%s",
     [PG_TR_CPU_FMT] =
         "Modelo: %s\nCPUs: %d\nDriver: %s\nGovernor: %s\n"
         "Governors: %s\nEPP: %s (%s)\nTurbo: %s\n"
@@ -239,6 +245,12 @@ static const char *const g_en[PG_TR_COUNT] =
     [PG_TR_SESSION_ACTIVE] = "Session: active",
     [PG_TR_SESSION_IDLE] = "Session: idle (display off)",
     [PG_TR_SESSION_UNKNOWN] = "Session: idle not detected",
+    [PG_TR_MEM_PRESSURE_OK] = "Memory: no pressure",
+    [PG_TR_MEM_PRESSURE_STRESSED] = "Memory: pressure (policy floor active)",
+    [PG_TR_MEM_PRESSURE_SEVERE] = "Memory: high pressure (device saving reduced)",
+    [PG_TR_LOADING] = "Loading…",
+    [PG_TR_DIAG_FETCH_FAIL] =
+        "Could not read from the daemon. Try again in a few seconds.",
     [PG_TR_ABOUT_SERVICE_FMT] = "Service (powergov): %s",
     [PG_TR_ABOUT_SERVICE_OFF] = "Service (powergov): not running",
     [PG_TR_TAB_SYSTEM] = "System",
@@ -346,7 +358,7 @@ static const char *const g_en[PG_TR_COUNT] =
     [PG_TR_NO_LOG] = "(no log)",
     [PG_TR_SYS_FMT] =
         "OS: %s\nKernel: %s\npowergov: %s\nsystemd: %s\nPPD active: %s\n"
-        "TLP active: %s\n%s",
+        "TLP active: %s\n%s\n%s\n%s",
     [PG_TR_CPU_FMT] =
         "Model: %s\nCPUs: %d\nDriver: %s\nGovernor: %s\n"
         "Governors: %s\nEPP: %s (%s)\nTurbo: %s\n"

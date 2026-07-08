@@ -17,6 +17,7 @@ powergov_gov_state_t powergov_state_machine_step(
     const powergov_config_t *cfg,
     double load,
     int battery_limited,
-    int allow_performance);
+    int allow_performance,
+    int memory_stressed);
 
 #endif

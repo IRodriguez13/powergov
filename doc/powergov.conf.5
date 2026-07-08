@@ -1,0 +1,151 @@
+.TH POWERGOV.CONF 5 "July 2026" "powergov 1.13.0" "File Formats"
+.SH NAME
+powergov.conf \- persistent configuration for the powergov daemon
+.SH DESCRIPTION
+The file
+.I /etc/powergov.conf
+stores settings loaded at daemon start and updated when runtime changes are
+applied through
+.BR powergov (1),
+.BR powergov-ui (1),
+or the control socket. Lines beginning with
+.B #
+are comments. Keys use
+.BR KEY=value
+syntax (no spaces around
+.BR = ).
+.PP
+Template in the source tree:
+.IR config/powergov.conf .
+.SH USER MODE
+.TP
+.B USER_MODE
+One of:
+.BR max-battery
+(default),
+.BR balanced ,
+.BR performance ,
+or
+.BR custom .
+Controls overall aggressiveness on battery. See
+.IR Documentation/configuracion.md .
+.SH FEATURES
+.TP
+.B FEATURES
+Comma-separated list of enabled subsystems. Valid names:
+.RB governor ,
+.BR epp ,
+.BR freq_cap ,
+.BR turbo ,
+.BR platform ,
+.BR runtime_pm ,
+.BR peripheral_pm ,
+.BR disk_pm ,
+.BR pcie_aspm ,
+.BR bluetooth_pm .
+.SH BATTERY SAFE
+.TP
+.B BATTERY_SAFE_THRESHOLD
+Integer 0\(en100. 0 disables battery-safe mode. Values 1\(en100 block the
+performance governor when state of charge is at or below the threshold.
+.SH LOGGING
+.TP
+.B LOG_LEVEL
+0 (off) through 4 (debug). Default 3 (info).
+.TP
+.B DEV_LOG
+0 or 1. When 1, structured developer log is written to
+.IR /var/log/powergov/powergov.log .
+.SH STATE MACHINE THRESHOLDS
+Fractions of CPU load (0.0\(en1.0) for the internal governor state machine:
+.TP
+.B THRESHOLD_LOW
+Default 0.25 \(en POWERSAVE versus BALANCED boundary.
+.TP
+.B THRESHOLD_MID
+Default 0.60 \(en exit from PERFORMANCE.
+.TP
+.B THRESHOLD_HIGH
+Default 0.75 \(en enter PERFORMANCE.
+.SH CPU AND BATTERY LEVELS
+.TP
+.B FREQ_CAP_BATTERY
+Percent of hardware max frequency (50\(en100, default 80) applied on battery.
+.TP
+.B LOW_BATTERY
+SOC percent (5\(en50, default 15) for survival profile (stricter freq cap).
+.SH PERIPHERALS (CUSTOM MODE)
+Used when
+.B USER_MODE=custom
+and feature
+.B peripheral_pm
+is enabled:
+.TP
+.B PERIPHERAL_WIFI
+.TP
+.B PERIPHERAL_SATA
+.TP
+.B PERIPHERAL_AUDIO
+Each 0 or 1 (default 1). WiFi uses
+.BR iw (8);
+audio uses HDA codec power_save.
+.SH CUSTOM MODE FLAGS
+.TP
+.B CUSTOM_ALLOW_PERFORMANCE
+0 or 1. Allow performance governor on battery in custom mode.
+.TP
+.B CUSTOM_RUNTIME_AGGRESSIVE
+0 or 1. Aggressive PCI/USB runtime PM in custom mode.
+.SH CONTEXT REACTIVE BOOST (v1.13+)
+.TP
+.B LID_AGGRESSIVE
+0 or 1 (default 1). Boost when lid is closed.
+.TP
+.B DISPLAY_AGGRESSIVE
+0 or 1 (default 1). Boost when logind
+.B IdleHint
+is true (screen off / session idle).
+.TP
+.B CONTEXT_REQUIRE_LOW_LOAD
+0 or 1 (default 1). Require low CPU load before context boost.
+.TP
+.B CONTEXT_LOW_LOAD_PCT
+Integer percent (default 15). Maximum CPU load for context boost when
+.B CONTEXT_REQUIRE_LOW_LOAD
+is 1.
+.PP
+See
+.IR Documentation/contexto-reactivo.md .
+.SH MEMORY-AWARE POLICY (v1.14+)
+Avoid aggressive saving when the kernel reports memory pressure:
+.TP
+.B MEMORY_AWARE
+0 or 1 (default 1). Enable PSI/swap-aware policy floor.
+.TP
+.B MEMORY_PSI_SOME_PCT
+.TP
+.B MEMORY_PSI_FULL_PCT
+.TP
+.B MEMORY_SWAP_PAGES_TICK
+.TP
+.B MEMORY_SWAP_PAGES_SEVERE
+Thresholds for stressed/severe classification (see
+.IR Documentation/memory-aware.md ).
+.SH RUNTIME TUNING
+Thresholds, peripherals, custom flags, and context keys can also be changed at
+runtime via the control socket commands
+.B SET_TUNING
+and
+.B QUERY_TUNING
+without editing this file manually; the daemon persists accepted values here.
+.SH FILES
+.TP
+.I /etc/powergov.conf
+This configuration file.
+.SH SEE ALSO
+.BR powergov (1),
+.BR powergov (8),
+.BR powergov-ui (1),
+.IR Documentation/configuracion.md .
+.SH AUTHOR
+Iván Ezequiel Rodriguez.

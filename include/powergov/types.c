@@ -100,6 +100,11 @@ void powergov_config_set_defaults(powergov_config_t *cfg)
     cfg->display_aggressive = 1;
     cfg->context_require_low_load = 1;
     cfg->context_low_load_pct = 15;
+    cfg->memory_aware = 1;
+    cfg->memory_psi_some_pct = POWERGOV_MEMORY_PSI_SOME_DEF;
+    cfg->memory_psi_full_pct = POWERGOV_MEMORY_PSI_FULL_DEF;
+    cfg->memory_swap_pages_tick = POWERGOV_MEMORY_SWAP_TICK_DEF;
+    cfg->memory_swap_pages_severe = POWERGOV_MEMORY_SWAP_SEVERE_DEF;
 }
 
 int powergov_features_to_mask(const powergov_features_t *f)

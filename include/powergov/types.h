@@ -23,6 +23,11 @@
 #define POWERGOV_CONSERVE_BATTERY_PCT 30
 #define POWERGOV_LOW_BATTERY_FREQ_CAP 70
 
+#define POWERGOV_MEMORY_PSI_SOME_DEF     10
+#define POWERGOV_MEMORY_PSI_FULL_DEF       2
+#define POWERGOV_MEMORY_SWAP_TICK_DEF      128
+#define POWERGOV_MEMORY_SWAP_SEVERE_DEF    512
+
 typedef enum
 {
     POWERGOV_USER_MAX_BATTERY = 0,
@@ -95,6 +100,11 @@ typedef struct
     int display_aggressive;
     int context_require_low_load;
     int context_low_load_pct;
+    int memory_aware;
+    int memory_psi_some_pct;
+    int memory_psi_full_pct;
+    int memory_swap_pages_tick;
+    int memory_swap_pages_severe;
 } powergov_config_t;
 
 typedef enum

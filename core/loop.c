@@ -11,6 +11,7 @@
 #include "../devices/disk_pm.h"
 #include "../devices/pcie_aspm.h"
 #include "../devices/bluetooth_pm.h"
+#include "../power/memory_pressure.h"
 #include "../log/log.h"
 #include "../metrics/metrics.h"
 #include "../cpu/governor.h"
@@ -401,7 +402,7 @@ int handle_socket_config(int sockfd, powergov_config_t *config)
         case POWERGOV_SOCKET_CMD_QUERY_SYSTEM:
         {
             powergov_reply_system_t rs;
-            powergov_info_fill_system(&rs);
+            powergov_info_fill_system(config, &rs);
             if (socket_write_full(client_fd, &rs, sizeof(rs)) != 0)
                 PG_LOG_D("loop", "socket reply failed");
             break;
@@ -539,11 +540,17 @@ void powergov_loop(powergov_config_t *config)
     {
         powergov_gov_state_t gov_state;
         double load;
+        powergov_memory_pressure_t mp;
+        int memory_stressed = 0;
+        int memory_severe = 0;
 
         if (powergov_shutdown)
             break;
 
         load = get_cpu_usage();
+        powergov_memory_pressure_poll(&mp);
+        powergov_memory_pressure_classify(config, &mp, &memory_stressed,
+                                          &memory_severe);
 
         if (socket_fd >= 0)
         {
@@ -568,6 +575,9 @@ void powergov_loop(powergov_config_t *config)
         else
             memset(&power, 0, sizeof(power));
 
+        power.memory_stressed = memory_stressed;
+        power.memory_severe = memory_severe;
+
         if (config->battery_safe_enabled && power.present && power.capacity_pct >= 0)
             battery_limited = (power.capacity_pct <= config->battery_threshold);
         else
@@ -578,7 +588,8 @@ void powergov_loop(powergov_config_t *config)
         allow_performance = policy.allow_performance;
 
         gov_state = powergov_state_machine_step(&sm, config, load,
-                                                battery_limited, allow_performance);
+                                                battery_limited, allow_performance,
+                                                memory_stressed);
         powergov_profile_compute(config, &power, gov_state, battery_limited,
                                  load, &policy);
 
@@ -594,10 +605,11 @@ void powergov_loop(powergov_config_t *config)
                 prev_features_mask = features_mask;
                 have_prev = 1;
                 g_force_reapply = 0;
-                PG_LOG_D("loop", "policy gov=%s epp=%s turbo=%d cap=%d src=%s load=%.0f%%",
+                PG_LOG_D("loop", "policy gov=%s epp=%s turbo=%d cap=%d src=%s load=%.0f%% mem=%d",
                          policy.governor, policy.epp, policy.turbo_on,
                          policy.freq_cap_pct,
-                         powergov_power_source_str(power.source), load * 100.0);
+                         powergov_power_source_str(power.source), load * 100.0,
+                         memory_stressed);
             }
         }
 
@@ -606,7 +618,26 @@ void powergov_loop(powergov_config_t *config)
         powergov_metrics_write_file();
 
         for (int i = 0; i < 20 && !powergov_shutdown; i++)
-            usleep(100000);
+        {
+            if (socket_fd >= 0)
+            {
+                fd_set rfds;
+                struct timeval tv;
+
+                FD_ZERO(&rfds);
+                FD_SET(socket_fd, &rfds);
+                tv.tv_sec = 0;
+                tv.tv_usec = 100000;
+                if (select(socket_fd + 1, &rfds, NULL, NULL, &tv) > 0 &&
+                    FD_ISSET(socket_fd, &rfds))
+                {
+                    while (handle_socket_config(socket_fd, config) > 0)
+                        ;
+                }
+            }
+            else
+                usleep(100000);
+        }
     }
 
     cpu_policy_restore(config);

@@ -27,7 +27,8 @@ powergov_gov_state_t powergov_state_machine_step(
     const powergov_config_t *cfg,
     double load,
     int battery_limited,
-    int allow_performance)
+    int allow_performance,
+    int memory_stressed)
 {
     double low;
     double mid;
@@ -39,6 +40,9 @@ powergov_gov_state_t powergov_state_machine_step(
     low = cfg->threshold_low;
     mid = cfg->threshold_mid;
     high = cfg->threshold_high;
+
+    if (memory_stressed && sm->state == POWERGOV_GOV_POWERSAVE)
+        return transition(sm, POWERGOV_GOV_BALANCED);
 
     switch (sm->state)
     {
@@ -70,7 +74,7 @@ powergov_gov_state_t powergov_state_machine_step(
                 return transition(sm, POWERGOV_GOV_PERFORMANCE);
             }
         }
-        else if (load < low)
+        else if (load < low && !memory_stressed)
         {
             sm->down_streak++;
             sm->up_streak = 0;

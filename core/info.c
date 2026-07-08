@@ -8,6 +8,8 @@
 #include "../platform/tlp_compat.h"
 #include "../power/lid_state.h"
 #include "../power/session_idle.h"
+#include "../power/memory_pressure.h"
+#include "../config/config.h"
 #include "../devices/peripheral_pm.h"
 #include "../devices/disk_pm.h"
 #include "../devices/pcie_aspm.h"
@@ -148,8 +150,12 @@ void powergov_info_fill_status(const powergov_config_t *cfg,
         out->turbo_on = turbo;
 }
 
-void powergov_info_fill_system(powergov_reply_system_t *out)
+void powergov_info_fill_system(const powergov_config_t *cfg,
+                               powergov_reply_system_t *out)
 {
+    powergov_config_t local;
+    const powergov_config_t *use_cfg = cfg;
+
     if (!out)
         return;
 
@@ -173,6 +179,21 @@ void powergov_info_fill_system(powergov_reply_system_t *out)
     (void)powergov_lid_poll(&out->lid_state);
     out->session_idle = -1;
     (void)powergov_session_idle_poll(&out->session_idle);
+    if (!use_cfg)
+    {
+        powergov_config_set_defaults(&local);
+        use_cfg = &local;
+    }
+    {
+        powergov_memory_pressure_t mp;
+        int stressed = 0;
+        int severe = 0;
+
+        powergov_memory_pressure_poll(&mp);
+        powergov_memory_pressure_classify(use_cfg, &mp, &stressed, &severe);
+        out->memory_stressed = stressed;
+        out->memory_severe = severe;
+    }
 }
 
 void powergov_info_fill_cpu(powergov_reply_cpu_t *out)
@@ -474,7 +495,7 @@ void powergov_info_fill_bundle(const powergov_config_t *cfg, unsigned int mask,
     if (mask & POWERGOV_BUNDLE_STATUS)
         powergov_info_fill_status(cfg, &out->status);
     if (mask & POWERGOV_BUNDLE_SYSTEM)
-        powergov_info_fill_system(&out->system);
+        powergov_info_fill_system(cfg, &out->system);
     if (mask & POWERGOV_BUNDLE_CPU)
         powergov_info_fill_cpu(&out->cpu);
     if (mask & POWERGOV_BUNDLE_COMPAT)

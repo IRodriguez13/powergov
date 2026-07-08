@@ -1,6 +1,6 @@
 # Configuración
 
-> **Última verificación:** 2026-07-05  
+> **Última verificación:** 2026-07-08  
 > **Fuente de verdad:** `config/config.c`, `config/powergov.conf`, `main.c`, `include/powergov/types.h`
 
 ## Archivo persistente
@@ -26,6 +26,22 @@ Plantilla en repo: `config/powergov.conf`.
 | `PERIPHERAL_AUDIO` | 0, 1 | 1 | `power_save` en codecs HDA |
 | `CUSTOM_ALLOW_PERFORMANCE` | 0, 1 | 0 | Modo custom: permitir governor performance en batería |
 | `CUSTOM_RUNTIME_AGGRESSIVE` | 0, 1 | 1 | Modo custom: runtime PM agresivo |
+| `LID_AGGRESSIVE` | 0, 1 | 1 | Boost device PM con tapa cerrada en batería (v1.13) |
+| `DISPLAY_AGGRESSIVE` | 0, 1 | 1 | Boost con sesión idle / pantalla apagada (logind) |
+| `CONTEXT_REQUIRE_LOW_LOAD` | 0, 1 | 1 | Exigir carga CPU baja para el boost contextual |
+| `CONTEXT_LOW_LOAD_PCT` | 1–100 | 15 | Umbral de carga CPU (%) para el boost |
+
+### Memoria consciente (v1.14)
+
+| Clave | Valores | Default | Descripción |
+|-------|---------|---------|-------------|
+| `MEMORY_AWARE` | 0, 1 | 1 | Evitar ahorro agresivo bajo presión PSI/swap |
+| `MEMORY_PSI_SOME_PCT` | 1–100 | 10 | PSI memory some avg10 (%) → stressed |
+| `MEMORY_PSI_FULL_PCT` | 1–100 | 2 | PSI memory full avg10 (%) → severe |
+| `MEMORY_SWAP_PAGES_TICK` | 1–65535 | 128 | Páginas swap por tick → stressed |
+| `MEMORY_SWAP_PAGES_SEVERE` | 1–65535 | 512 | Páginas swap por tick → severe |
+
+Detalle: [memory-aware.md](memory-aware.md).
 
 ### Features válidas en `FEATURES`
 
@@ -49,7 +65,7 @@ Plantilla en repo: `config/powergov.conf`.
 | **max-battery** | Máxima protección: sin performance, turbo off, EPP bajo, cap freq, runtime PM, platform low-power |
 | **balanced** | Ahorro moderado; cap freq; performance bloqueado salvo override battery-safe |
 | **performance** | Permite governor performance y turbo en batería (decisión explícita del usuario) |
-| **custom** | Política definida por flags `CUSTOM_*` y `PERIPHERAL_*`; expuesto en UI Dev → Características |
+| **custom** | Política definida por flags `CUSTOM_*` y `PERIPHERAL_*`; expuesto en UI → Información → Funciones |
 
 Default del proyecto: **`max-battery`** — proteger autonomía salvo que el usuario elija lo contrario.
 
@@ -70,13 +86,19 @@ powergov dev-metrics   # verify_ok en disk_pm, pcie_aspm, etc.
 
 Benchmark comparativo: `scripts/bench-battery-session.sh powergov` vs `tlp` (misma duración, brillo fijo).
 
+### Contexto reactivo (v1.13)
+
+Con `LID_AGGRESSIVE` y/o `DISPLAY_AGGRESSIVE`, el daemon puede forzar `device_aggression=3` en batería cuando la tapa está cerrada o logind reporta sesión idle, si la carga CPU está por debajo del umbral (`CONTEXT_*`). Detalle: [contexto-reactivo.md](contexto-reactivo.md).
+
+Tuning en caliente: `SET_TUNING` con IDs `POWERGOV_TUNING_LID_AGGRESSIVE` y `POWERGOV_TUNING_DISPLAY_AGGRESSIVE`.
+
 ## CLI
 
 ### Usuario
 
 ```bash
 powergov on | off | status
-powergov mode max-battery|balanced|performance
+powergov mode max-battery|balanced|performance|custom
 powergov feature <nombre> on|off
 powergov features list
 powergov --battery-safe <0-100>
@@ -102,7 +124,10 @@ Protocolo extendido (`powergov_socket_msg_t` en `types.h`):
 | `SET_BATTERY_THRESHOLD` | battery-safe |
 | `SET_USER_MODE` | modo usuario |
 | `SET_FEATURE` | toggle feature (value=id, value2=on) |
+| `SET_TUNING` | umbral, periféricos, custom, lid/display aggression |
+| `QUERY_TUNING` | respuesta `powergov_reply_tuning_t` |
 | `QUERY_FULL_CONFIG` | respuesta `powergov_socket_status_t` |
+| `QUERY_STATUS` | estado + `session_idle`, fuente, SOC |
 
 Legacy: enviar solo un `int` threshold sigue funcionando.
 

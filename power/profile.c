@@ -82,6 +82,9 @@ static void apply_context_aggression_boost(const powergov_config_t *cfg,
     if (!cfg || !out || !on_battery || !power)
         return;
 
+    if (cfg->memory_aware && power->memory_stressed)
+        return;
+
     if (cfg->lid_aggressive && power->lid_closed == 1)
         trigger = 1;
     if (cfg->display_aggressive && power->session_idle == 1)
@@ -101,6 +104,29 @@ static void apply_context_aggression_boost(const powergov_config_t *cfg,
     if (out->device_aggression < 3)
         out->device_aggression = 3;
     out->runtime_pm_aggressive = 1;
+    out->peripheral_pm_level =
+        peripheral_level_from_aggression(out->device_aggression, cfg);
+}
+
+static void apply_memory_pressure_limits(const powergov_config_t *cfg,
+                                         const powergov_power_info_t *power,
+                                         powergov_effective_policy_t *out)
+{
+    if (!cfg || !out || !cfg->memory_aware || !power || !power->memory_stressed)
+        return;
+
+    if (out->device_aggression > 2)
+        out->device_aggression = 2;
+
+    if (power->memory_severe)
+    {
+        if (out->device_aggression > 1)
+            out->device_aggression = 1;
+        out->runtime_pm_aggressive = 0;
+    }
+    else if (out->device_aggression < 2)
+        out->runtime_pm_aggressive = 0;
+
     out->peripheral_pm_level =
         peripheral_level_from_aggression(out->device_aggression, cfg);
 }
@@ -164,6 +190,7 @@ void powergov_profile_compute(const powergov_config_t *cfg,
             out->turbo_on = on_battery ? 0 : 1;
         }
         apply_context_aggression_boost(cfg, power, on_battery, cpu_load, out);
+        apply_memory_pressure_limits(cfg, power, out);
         return;
     }
 
@@ -253,4 +280,5 @@ void powergov_profile_compute(const powergov_config_t *cfg,
     }
 
     apply_context_aggression_boost(cfg, power, on_battery, cpu_load, out);
+    apply_memory_pressure_limits(cfg, power, out);
 }

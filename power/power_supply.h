@@ -10,6 +10,8 @@ typedef struct
     powergov_power_source_t source;
     int lid_closed;
     int session_idle;
+    int memory_stressed;
+    int memory_severe;
     char name[64];
 } powergov_power_info_t;
 

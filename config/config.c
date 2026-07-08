@@ -181,6 +181,28 @@ int powergov_config_load(powergov_config_t *config)
             if (ival >= 1 && ival <= 80)
                 config->context_low_load_pct = ival;
         }
+        else if (sscanf(line, "MEMORY_AWARE=%d", &ival) == 1)
+            config->memory_aware = ival ? 1 : 0;
+        else if (sscanf(line, "MEMORY_PSI_SOME_PCT=%d", &ival) == 1)
+        {
+            if (ival >= 1 && ival <= 100)
+                config->memory_psi_some_pct = ival;
+        }
+        else if (sscanf(line, "MEMORY_PSI_FULL_PCT=%d", &ival) == 1)
+        {
+            if (ival >= 1 && ival <= 100)
+                config->memory_psi_full_pct = ival;
+        }
+        else if (sscanf(line, "MEMORY_SWAP_PAGES_TICK=%d", &ival) == 1)
+        {
+            if (ival >= 1 && ival <= 65535)
+                config->memory_swap_pages_tick = ival;
+        }
+        else if (sscanf(line, "MEMORY_SWAP_PAGES_SEVERE=%d", &ival) == 1)
+        {
+            if (ival >= 1 && ival <= 65535)
+                config->memory_swap_pages_severe = ival;
+        }
         else if (sscanf(line, "%63[^=]=%127s", key, val) == 2)
         {
             if (strcmp(key, "FEATURES_OFF") == 0)
@@ -259,6 +281,11 @@ int powergov_config_save(const powergov_config_t *config)
     fprintf(f, "DISPLAY_AGGRESSIVE=%d\n", config->display_aggressive);
     fprintf(f, "CONTEXT_REQUIRE_LOW_LOAD=%d\n", config->context_require_low_load);
     fprintf(f, "CONTEXT_LOW_LOAD_PCT=%d\n", config->context_low_load_pct);
+    fprintf(f, "MEMORY_AWARE=%d\n", config->memory_aware);
+    fprintf(f, "MEMORY_PSI_SOME_PCT=%d\n", config->memory_psi_some_pct);
+    fprintf(f, "MEMORY_PSI_FULL_PCT=%d\n", config->memory_psi_full_pct);
+    fprintf(f, "MEMORY_SWAP_PAGES_TICK=%d\n", config->memory_swap_pages_tick);
+    fprintf(f, "MEMORY_SWAP_PAGES_SEVERE=%d\n", config->memory_swap_pages_severe);
 
     if (fclose(f) != 0)
         return -1;

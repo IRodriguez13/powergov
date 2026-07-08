@@ -1,7 +1,7 @@
 # Módulos e interfaces sysfs
 
-> **Última verificación:** 2026-07-05  
-> **Fuente de verdad:** `cpu/*.c`, `platform/platform_profile.c`, `devices/*.c`, `power/profile.c`, `core/sysfs.c`
+> **Última verificación:** 2026-07-08  
+> **Fuente de verdad:** `cpu/*.c`, `platform/platform_profile.c`, `devices/*.c`, `power/profile.c`, `power/lid_state.c`, `power/session_idle.c`, `core/sysfs.c`
 
 Cada módulo implementa **apply** (escribir si difiere), **verify** (releer y comparar) y registra métricas `apply_ok|fail|skip` y `verify_ok|fail`.
 
@@ -13,7 +13,25 @@ Cada módulo implementa **apply** (escribir si difiere), **verify** (releer y co
 | SOC | `.../capacity` |
 | Fuente | `.../status` → `Discharging`, `Charging`, `Full`, `Not charging` |
 
-Código: `power/power_supply.c`.
+Código: `power/power_supply.c` (integra `lid_state` y `session_idle` en cada poll).
+
+## power/lid_state
+
+| Origen | Ruta |
+|--------|------|
+| ACPI proc | `/proc/acpi/button/lid/*/state` |
+| ACPI sysfs | `/sys/bus/acpi/devices/LID*/state` |
+
+Salida: `lid_closed` 0 = abierta, 1 = cerrada, -1 = desconocido.
+
+## power/session_idle
+
+| Mecanismo | Comando / API |
+|-----------|----------------|
+| Primario | `busctl` → `org.freedesktop.login1.Manager.IdleHint` |
+| Fallback | `loginctl show-session self -p IdleHint` |
+
+Salida: `session_idle` 0 = activa, 1 = idle, -1 = no disponible.
 
 ## cpu/governor
 
@@ -112,7 +130,9 @@ Feature: `bluetooth_pm`. Nivel ≥2 en batería: `power/control` → `auto` en H
 | 0 | AC o performance permitido | restore device PM |
 | 1 | BALANCED | WiFi PS, ASPM default |
 | 2 | POWERSAVE / max-battery | + disk APM, ASPM powersave, BT, runtime PM |
-| 3 | SOC ≤ LOW_BATTERY | + APM agresivo, SATA min_power |
+| 3 | SOC ≤ LOW_BATTERY **o context boost** | + APM agresivo, SATA min_power |
+
+**Context boost (v1.13):** con `LID_AGGRESSIVE` / `DISPLAY_AGGRESSIVE` y carga baja, `apply_context_aggression_boost()` fuerza nivel 3 aunque el governor esté en BALANCED. Ver [contexto-reactivo.md](contexto-reactivo.md).
 
 TLP activo → powergov **no aplica** runtime_pm, peripheral_pm, disk_pm, pcie_aspm, bluetooth_pm (`platform/tlp_compat.c`).
 
