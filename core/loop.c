@@ -146,6 +146,12 @@ static void apply_tuning_value(powergov_config_t *config, int id, int value)
     case POWERGOV_TUNING_CUSTOM_RUNTIME_PM:
         config->custom_runtime_aggressive = value ? 1 : 0;
         break;
+    case POWERGOV_TUNING_LID_AGGRESSIVE:
+        config->lid_aggressive = value ? 1 : 0;
+        break;
+    case POWERGOV_TUNING_DISPLAY_AGGRESSIVE:
+        config->display_aggressive = value ? 1 : 0;
+        break;
     default:
         break;
     }
@@ -168,6 +174,8 @@ static void fill_tuning_reply(const powergov_config_t *config,
     out->peripheral_audio = config->peripheral.audio;
     out->custom_allow_performance = config->custom_allow_performance;
     out->custom_runtime_aggressive = config->custom_runtime_aggressive;
+    out->lid_aggressive = config->lid_aggressive;
+    out->display_aggressive = config->display_aggressive;
 }
 
 static void defer_tlp_layers(powergov_config_t *config)
@@ -543,7 +551,11 @@ void powergov_loop(powergov_config_t *config)
                 ;
         }
 
-        if (!have_cached_power || battery_tick >= POWERGOV_BATTERY_REFRESH)
+        if (!have_cached_power || battery_tick >=
+            ((have_cached_power && cached_power.present &&
+              cached_power.source == POWERGOV_POWER_BATTERY)
+                 ? POWERGOV_BATTERY_REFRESH
+                 : POWERGOV_BATTERY_REFRESH_AC))
         {
             if (powergov_power_supply_poll(&cached_power) == 0)
                 have_cached_power = 1;
@@ -561,12 +573,14 @@ void powergov_loop(powergov_config_t *config)
         else
             battery_limited = 0;
 
-        powergov_profile_compute(config, &power, sm.state, battery_limited, &policy);
+        powergov_profile_compute(config, &power, sm.state, battery_limited,
+                                 load, &policy);
         allow_performance = policy.allow_performance;
 
         gov_state = powergov_state_machine_step(&sm, config, load,
                                                 battery_limited, allow_performance);
-        powergov_profile_compute(config, &power, gov_state, battery_limited, &policy);
+        powergov_profile_compute(config, &power, gov_state, battery_limited,
+                                 load, &policy);
 
         {
             int features_mask = powergov_features_to_mask(&config->features);

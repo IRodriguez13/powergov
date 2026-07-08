@@ -1,4 +1,6 @@
 #include "power_supply.h"
+#include "../power/lid_state.h"
+#include "../power/session_idle.h"
 #include "../core/sysfs.h"
 #include "../log/log.h"
 #include <dirent.h>
@@ -74,6 +76,8 @@ int powergov_power_supply_poll(powergov_power_info_t *info)
     memset(info, 0, sizeof(*info));
     info->source = POWERGOV_POWER_UNKNOWN;
     info->capacity_pct = -1;
+    info->lid_closed = -1;
+    info->session_idle = -1;
 
     if (!g_battery_found && !powergov_power_supply_detect())
         return -1;
@@ -90,6 +94,9 @@ int powergov_power_supply_poll(powergov_power_info_t *info)
              "/sys/class/power_supply/%s/status", g_battery_name);
     if (sysfs_read_file(path, status, sizeof(status)) == 0)
         info->source = parse_status(status);
+
+    (void)powergov_lid_poll(&info->lid_closed);
+    (void)powergov_session_idle_poll(&info->session_idle);
 
     return 0;
 }

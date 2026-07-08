@@ -22,6 +22,8 @@ SRC = main.c \
       cpu/policy.c \
       power/power_supply.c \
       power/profile.c \
+      power/lid_state.c \
+      power/session_idle.c \
       platform/platform_profile.c \
       platform/tlp_compat.c \
       devices/runtime_pm.c \

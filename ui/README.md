@@ -37,10 +37,10 @@ Incluye icono, `.desktop`, Polkit (`org.powergov.policy`) y helper `powergov-dev
 | Área | Contenido |
 |------|-----------|
 | **Usuario** | Modos max-battery / balanced / performance, reserva batería (slider), estado, instalar/desinstalar servicio |
+| **Información** | Sistema, CPU, compatibilidad, métricas, log, funciones (siempre visible) |
 | **Acerca de** | Versión UI/daemon (`powergov-ui -v` / `powergov -v`), licencia GPLv3, enlace al repo |
-| **Dev** (Polkit) | Métricas, log, features, umbrales, periféricos (modo custom, a demanda) |
 
-Modo **custom** y tuning avanzado solo en Dev. Los checkboxes de periféricos esperan la primera sincronización con el daemon antes de aceptar clics (evita desalineación UI/config).
+Modo **custom** y tuning avanzado en la pestaña **Funciones** dentro de Información.
 
 ## Bandeja del sistema
 

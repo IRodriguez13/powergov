@@ -13,6 +13,7 @@
 #define POWERGOV_TICKS_PER_SEC      2
 #define POWERGOV_HYSTERESIS_SAMPLES 3
 #define POWERGOV_BATTERY_REFRESH    5
+#define POWERGOV_BATTERY_REFRESH_AC 30
 
 #define POWERGOV_THRESHOLD_LOW_DEF    0.25
 #define POWERGOV_THRESHOLD_MID_DEF  0.60
@@ -90,6 +91,10 @@ typedef struct
     powergov_peripheral_opts_t peripheral;
     int custom_allow_performance;
     int custom_runtime_aggressive;
+    int lid_aggressive;
+    int display_aggressive;
+    int context_require_low_load;
+    int context_low_load_pct;
 } powergov_config_t;
 
 typedef enum
@@ -121,7 +126,9 @@ typedef enum
     POWERGOV_TUNING_PERIPHERAL_SATA,
     POWERGOV_TUNING_PERIPHERAL_AUDIO,
     POWERGOV_TUNING_CUSTOM_ALLOW_PERF,
-    POWERGOV_TUNING_CUSTOM_RUNTIME_PM
+    POWERGOV_TUNING_CUSTOM_RUNTIME_PM,
+    POWERGOV_TUNING_LID_AGGRESSIVE,
+    POWERGOV_TUNING_DISPLAY_AGGRESSIVE
 } powergov_tuning_id_t;
 
 typedef enum
@@ -168,6 +175,8 @@ typedef struct
     int peripheral_audio;
     int custom_allow_performance;
     int custom_runtime_aggressive;
+    int lid_aggressive;
+    int display_aggressive;
 } powergov_reply_tuning_t;
 
 typedef struct

@@ -32,6 +32,8 @@ typedef struct
     int systemd_active;
     int ppd_detected;
     int tlp_detected;
+    int lid_state;
+    int session_idle;
 } powergov_reply_system_t;
 
 typedef struct

@@ -96,6 +96,10 @@ void powergov_config_set_defaults(powergov_config_t *cfg)
     cfg->peripheral.audio = 1;
     cfg->custom_allow_performance = 0;
     cfg->custom_runtime_aggressive = 1;
+    cfg->lid_aggressive = 1;
+    cfg->display_aggressive = 1;
+    cfg->context_require_low_load = 1;
+    cfg->context_low_load_pct = 15;
 }
 
 int powergov_features_to_mask(const powergov_features_t *f)

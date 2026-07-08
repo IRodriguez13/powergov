@@ -8,6 +8,8 @@ typedef struct
     int present;
     int capacity_pct;
     powergov_power_source_t source;
+    int lid_closed;
+    int session_idle;
     char name[64];
 } powergov_power_info_t;
 

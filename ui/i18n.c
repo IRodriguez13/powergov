@@ -16,8 +16,18 @@ static const char *const g_es[PG_TR_COUNT] =
 {
     [PG_TR_CONNECTING] = "Conectando…",
     [PG_TR_TAB_PROFILE] = "Perfil",
-    [PG_TR_TAB_DIAGNOSTIC] = "Diagnóstico",
+    [PG_TR_TAB_DIAGNOSTIC] = "Información",
     [PG_TR_TAB_ABOUT] = "Acerca de",
+    [PG_TR_FEAT_LID_AGGRESSIVE] =
+        "Ahorro agresivo con tapa cerrada (solo en batería)",
+    [PG_TR_FEAT_DISPLAY_AGGRESSIVE] =
+        "Ahorro agresivo con pantalla apagada / sesión idle",
+    [PG_TR_LID_OPEN] = "Tapa: abierta",
+    [PG_TR_LID_CLOSED] = "Tapa: cerrada",
+    [PG_TR_LID_UNKNOWN] = "Tapa: no detectada",
+    [PG_TR_SESSION_ACTIVE] = "Sesión: activa",
+    [PG_TR_SESSION_IDLE] = "Sesión: idle (pantalla apagada)",
+    [PG_TR_SESSION_UNKNOWN] = "Sesión: idle no detectada",
     [PG_TR_ABOUT_SERVICE_FMT] = "Servicio (powergov): %s",
     [PG_TR_ABOUT_SERVICE_OFF] = "Servicio (powergov): no en ejecución",
     [PG_TR_TAB_SYSTEM] = "Sistema",
@@ -128,7 +138,8 @@ static const char *const g_es[PG_TR_COUNT] =
     [PG_TR_LOG_DEV_PERM_ERROR] = "Error al solicitar permisos",
     [PG_TR_NO_LOG] = "(sin log)",
     [PG_TR_SYS_FMT] =
-        "SO: %s\nKernel: %s\npowergov: %s\nsystemd: %s\nPPD activo: %s\nTLP activo: %s",
+        "SO: %s\nKernel: %s\npowergov: %s\nsystemd: %s\nPPD activo: %s\n"
+        "TLP activo: %s\n%s\n%s",
     [PG_TR_CPU_FMT] =
         "Modelo: %s\nCPUs: %d\nDriver: %s\nGovernor: %s\n"
         "Governors: %s\nEPP: %s (%s)\nTurbo: %s\n"
@@ -216,8 +227,18 @@ static const char *const g_en[PG_TR_COUNT] =
 {
     [PG_TR_CONNECTING] = "Connecting…",
     [PG_TR_TAB_PROFILE] = "Profile",
-    [PG_TR_TAB_DIAGNOSTIC] = "Diagnostics",
+    [PG_TR_TAB_DIAGNOSTIC] = "Information",
     [PG_TR_TAB_ABOUT] = "About",
+    [PG_TR_FEAT_LID_AGGRESSIVE] =
+        "Aggressive saving when lid closed (battery only)",
+    [PG_TR_FEAT_DISPLAY_AGGRESSIVE] =
+        "Aggressive saving when display off / session idle",
+    [PG_TR_LID_OPEN] = "Lid: open",
+    [PG_TR_LID_CLOSED] = "Lid: closed",
+    [PG_TR_LID_UNKNOWN] = "Lid: not detected",
+    [PG_TR_SESSION_ACTIVE] = "Session: active",
+    [PG_TR_SESSION_IDLE] = "Session: idle (display off)",
+    [PG_TR_SESSION_UNKNOWN] = "Session: idle not detected",
     [PG_TR_ABOUT_SERVICE_FMT] = "Service (powergov): %s",
     [PG_TR_ABOUT_SERVICE_OFF] = "Service (powergov): not running",
     [PG_TR_TAB_SYSTEM] = "System",
@@ -324,7 +345,8 @@ static const char *const g_en[PG_TR_COUNT] =
     [PG_TR_LOG_DEV_PERM_ERROR] = "Error requesting permissions",
     [PG_TR_NO_LOG] = "(no log)",
     [PG_TR_SYS_FMT] =
-        "OS: %s\nKernel: %s\npowergov: %s\nsystemd: %s\nPPD active: %s\nTLP active: %s",
+        "OS: %s\nKernel: %s\npowergov: %s\nsystemd: %s\nPPD active: %s\n"
+        "TLP active: %s\n%s",
     [PG_TR_CPU_FMT] =
         "Model: %s\nCPUs: %d\nDriver: %s\nGovernor: %s\n"
         "Governors: %s\nEPP: %s (%s)\nTurbo: %s\n"

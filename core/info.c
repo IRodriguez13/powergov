@@ -6,6 +6,8 @@
 #include "../power/power_supply.h"
 #include "../platform/platform_profile.h"
 #include "../platform/tlp_compat.h"
+#include "../power/lid_state.h"
+#include "../power/session_idle.h"
 #include "../devices/peripheral_pm.h"
 #include "../devices/disk_pm.h"
 #include "../devices/pcie_aspm.h"
@@ -167,6 +169,10 @@ void powergov_info_fill_system(powergov_reply_system_t *out)
     out->systemd_active = 1;
     out->ppd_detected = platform_ppd_active();
     out->tlp_detected = tlp_active();
+    out->lid_state = -1;
+    (void)powergov_lid_poll(&out->lid_state);
+    out->session_idle = -1;
+    (void)powergov_session_idle_poll(&out->session_idle);
 }
 
 void powergov_info_fill_cpu(powergov_reply_cpu_t *out)

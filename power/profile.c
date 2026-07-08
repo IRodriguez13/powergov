@@ -71,10 +71,45 @@ static int peripheral_level_from_aggression(int aggression,
     return level;
 }
 
+static void apply_context_aggression_boost(const powergov_config_t *cfg,
+                                           const powergov_power_info_t *power,
+                                           int on_battery,
+                                           double cpu_load,
+                                           powergov_effective_policy_t *out)
+{
+    int trigger = 0;
+
+    if (!cfg || !out || !on_battery || !power)
+        return;
+
+    if (cfg->lid_aggressive && power->lid_closed == 1)
+        trigger = 1;
+    if (cfg->display_aggressive && power->session_idle == 1)
+        trigger = 1;
+
+    if (!trigger)
+        return;
+
+    if (cfg->context_require_low_load)
+    {
+        double thr = cfg->context_low_load_pct / 100.0;
+
+        if (cpu_load > thr)
+            return;
+    }
+
+    if (out->device_aggression < 3)
+        out->device_aggression = 3;
+    out->runtime_pm_aggressive = 1;
+    out->peripheral_pm_level =
+        peripheral_level_from_aggression(out->device_aggression, cfg);
+}
+
 void powergov_profile_compute(const powergov_config_t *cfg,
                               const powergov_power_info_t *power,
                               powergov_gov_state_t gov_state,
                               int battery_limited,
+                              double cpu_load,
                               powergov_effective_policy_t *out)
 {
     int on_battery;
@@ -128,6 +163,7 @@ void powergov_profile_compute(const powergov_config_t *cfg,
             out->epp = on_battery ? "balance_power" : "balance_performance";
             out->turbo_on = on_battery ? 0 : 1;
         }
+        apply_context_aggression_boost(cfg, power, on_battery, cpu_load, out);
         return;
     }
 
@@ -215,4 +251,6 @@ void powergov_profile_compute(const powergov_config_t *cfg,
         out->epp = on_battery ? "balance_power" : "balance_performance";
         out->turbo_on = on_battery ? 0 : 1;
     }
+
+    apply_context_aggression_boost(cfg, power, on_battery, cpu_load, out);
 }

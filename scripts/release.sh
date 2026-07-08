@@ -42,19 +42,20 @@ NOTES="$(cat <<EOF
 
 **No hace falta compilar nada** para usar el AppImage.
 
-### Cambios en ${VERSION} — TLP-parity reactivo
+### Cambios en ${VERSION} — contexto idle, tuning y UI reactiva
 
 #### Daemon y política
-- **device_aggression** (0–3): política reactiva según carga CPU, modo usuario y SOC (no perfiles AC/BAT fijos como TLP).
-- Nuevas features: **disk_pm** (hdparm APM, SATA ALPM, NVMe), **pcie_aspm**, **bluetooth_pm**.
-- **peripheral_pm** refactorizado: WiFi + audio; SATA migrado a disk_pm.
-- Convivencia **TLP**: si TLP está activo, powergov difiere runtime_pm, peripheral_pm, disk_pm, pcie_aspm y bluetooth_pm.
-- Con TLP desactivado, powergov es **alternativa viable** con el stack device PM completo.
+- **Context boost** (\`apply_context_aggression_boost\`): sube \`device_aggression\` a 3 y activa runtime PM agresivo en batería cuando la tapa está cerrada (\`lid_aggressive\`) o la sesión está idle (\`display_aggressive\`), respetando \`context_require_low_load\` y el umbral de carga CPU.
+- **session_idle**: lectura de \`IdleHint\` vía \`busctl\` (logind) con fallback \`loginctl show-session self\`.
+- **lid_state**: detección de tapa cerrada desde sysfs/input.
+- **Poll adaptativo de batería**: refresco cada 5 ticks en batería vs 30 en AC (\`POWERGOV_BATTERY_REFRESH\` / \`POWERGOV_BATTERY_REFRESH_AC\`).
+- **Skip de apply redundante**: el loop solo reaplica política cuando \`policy_changed\` o cambia la máscara de features.
 
 #### UI GTK
-- Pestaña **Acerca de**: versión (misma plantilla que \`pack -v\`), licencia, enlace al repo, versión del servicio.
-- \`powergov-ui -v\` / \`powergov -v\`: salida unificada con metadatos GPLv3.
-- Features Dev: checkboxes disk_pm, pcie_aspm, bluetooth_pm (bloqueados si TLP activo).
+- Cache **optimista pending** en checkboxes de features opcionales, tuning de tapa/pantalla y periféricos (mismo patrón \`pg-periph-pending\`): feedback inmediato mientras el daemon confirma.
+- Pestaña Diagnóstico: estado de tapa y sesión idle.
+- Tuning: \`lid_aggressive\`, \`display_aggressive\`, periféricos WiFi/SATA/audio.
+- Eliminado modo Dev de la UI (v1.12); métricas/logs solo vía socket para diagnóstico avanzado.
 
 #### Herramientas
 - \`scripts/bench-battery-session.sh\`: benchmark comparativo powergov vs TLP en batería (host).

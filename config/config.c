@@ -170,6 +170,17 @@ int powergov_config_load(powergov_config_t *config)
             config->custom_allow_performance = ival ? 1 : 0;
         else if (sscanf(line, "CUSTOM_RUNTIME_AGGRESSIVE=%d", &ival) == 1)
             config->custom_runtime_aggressive = ival ? 1 : 0;
+        else if (sscanf(line, "LID_AGGRESSIVE=%d", &ival) == 1)
+            config->lid_aggressive = ival ? 1 : 0;
+        else if (sscanf(line, "DISPLAY_AGGRESSIVE=%d", &ival) == 1)
+            config->display_aggressive = ival ? 1 : 0;
+        else if (sscanf(line, "CONTEXT_REQUIRE_LOW_LOAD=%d", &ival) == 1)
+            config->context_require_low_load = ival ? 1 : 0;
+        else if (sscanf(line, "CONTEXT_LOW_LOAD_PCT=%d", &ival) == 1)
+        {
+            if (ival >= 1 && ival <= 80)
+                config->context_low_load_pct = ival;
+        }
         else if (sscanf(line, "%63[^=]=%127s", key, val) == 2)
         {
             if (strcmp(key, "FEATURES_OFF") == 0)
@@ -244,6 +255,10 @@ int powergov_config_save(const powergov_config_t *config)
     fprintf(f, "PERIPHERAL_AUDIO=%d\n", config->peripheral.audio);
     fprintf(f, "CUSTOM_ALLOW_PERFORMANCE=%d\n", config->custom_allow_performance);
     fprintf(f, "CUSTOM_RUNTIME_AGGRESSIVE=%d\n", config->custom_runtime_aggressive);
+    fprintf(f, "LID_AGGRESSIVE=%d\n", config->lid_aggressive);
+    fprintf(f, "DISPLAY_AGGRESSIVE=%d\n", config->display_aggressive);
+    fprintf(f, "CONTEXT_REQUIRE_LOW_LOAD=%d\n", config->context_require_low_load);
+    fprintf(f, "CONTEXT_LOW_LOAD_PCT=%d\n", config->context_low_load_pct);
 
     if (fclose(f) != 0)
         return -1;

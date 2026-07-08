@@ -30,11 +30,9 @@
 #define PG_MAIN_TAB_DIAG     1
 #define PG_MAIN_TAB_ABOUT    2
 #define POWERGOV_UI_PROGRAM  "powergov-ui"
-#define POLKIT_DEV_MODE      "org.powergov.dev-mode"
 #define POLKIT_MANAGE_SVC    "org.powergov.manage-service"
 #define POLKIT_INSTALL_SVC   "org.powergov.install-service"
 #define POWERGOV_PKEXEC      "/usr/bin/pkexec"
-#define POWERGOV_DEV_AUTH    "/usr/local/libexec/powergov/dev-auth"
 #define POWERGOV_INSTALL_HELPER \
     "/usr/local/libexec/powergov/install-service-resident.sh"
 #define POWERGOV_INSTALL_STAGING_DEFAULT \
@@ -122,8 +120,6 @@ struct _AppCtx
     GtkWidget *battery_state_label;
     GtkWidget *main_notebook;
     GtkWidget *dev_notebook;
-    GtkWidget *dev_lock_banner;
-    GtkWidget *dev_btn;
     GtkWidget *lang_btn;
     GtkWidget *battery_label;
     GtkWidget *activity_label;
@@ -142,9 +138,13 @@ struct _AppCtx
     GtkWidget *peripheral_section_label;
     GtkWidget *tlp_banner;
     GtkWidget *about_service_label;
+    GtkWidget *lid_aggressive_check;
+    GtkWidget *display_aggressive_check;
     GtkWidget *feature_checks[POWERGOV_FEATURE_COUNT];
     GtkWidget *periph_checks[3];
     gulong feature_handlers[POWERGOV_FEATURE_COUNT];
+    gulong lid_handler;
+    gulong display_handler;
     gulong periph_handlers[3];
     int periph_tuning_synced;
     GtkWidget *mode_buttons[PG_USER_MODE_COUNT];
@@ -161,7 +161,6 @@ struct _AppCtx
     int daemon_up;
     int service_installed;
     char daemon_version[64];
-    int dev_unlocked;
     int install_busy;
     int uninstall_busy;
     int startup_prompt_done;
@@ -171,6 +170,9 @@ struct _AppCtx
     int refresh_busy;
     int ui_sync;
     int ui_action_inflight;
+    int feature_pending[POWERGOV_FEATURE_COUNT];
+    int lid_pending;
+    int display_pending;
     int periph_pending[3];
     guint battery_debounce_id;
     char dev_log_last_snapshot[POWERGOV_SOCK_LOG_SZ + 1];
@@ -504,10 +506,11 @@ static unsigned int dev_tab_fetch_mask(int tab);
 static unsigned int compute_fetch_mask(const AppCtx *ctx);
 static gboolean on_timer(gpointer data);
 static GdkPixbuf *load_brand_icon(int size);
-static int dev_mode_active(const AppCtx *ctx);
 static void update_service_buttons(AppCtx *ctx, int systemd_active);
 static void update_about_service_label(AppCtx *ctx, const char *daemon_ver,
                                        int daemon_up);
+static const char *lid_state_label(int lid_state);
+static const char *session_idle_label(int session_idle);
 
 static int path_needs_materialize(const char *helper, const char *staging)
 {
@@ -707,13 +710,12 @@ static unsigned int compute_fetch_mask(const AppCtx *ctx)
 {
     unsigned int mask;
 
-    if (!ctx || !dev_mode_active(ctx))
+    if (!ctx)
         return 0;
     if (ctx->main_tab_current != PG_MAIN_TAB_DIAG)
         return 0;
 
     mask = dev_tab_fetch_mask(ctx->dev_tab_current);
-    /* STATUS on every dev poll: daemon_up, profile header, version checks. */
     return mask | POWERGOV_BUNDLE_STATUS;
 }
 
@@ -736,9 +738,22 @@ static void refresh_timer_start(AppCtx *ctx)
     ctx->timer_id = g_timeout_add(REFRESH_MS_FOCUSED, on_timer, ctx);
 }
 
-static int dev_mode_active(const AppCtx *ctx)
+static const char *lid_state_label(int lid_state)
 {
-    return ctx->dev_unlocked;
+    if (lid_state == 1)
+        return _(PG_TR_LID_CLOSED);
+    if (lid_state == 0)
+        return _(PG_TR_LID_OPEN);
+    return _(PG_TR_LID_UNKNOWN);
+}
+
+static const char *session_idle_label(int session_idle)
+{
+    if (session_idle == 1)
+        return _(PG_TR_SESSION_IDLE);
+    if (session_idle == 0)
+        return _(PG_TR_SESSION_ACTIVE);
+    return _(PG_TR_SESSION_UNKNOWN);
 }
 
 static int ui_tlp_blocks_feature(int feature_id)
@@ -784,6 +799,10 @@ static int tuning_value_from_reply(const powergov_reply_tuning_t *t, int tuning_
         return t->peripheral_sata;
     case POWERGOV_TUNING_PERIPHERAL_AUDIO:
         return t->peripheral_audio;
+    case POWERGOV_TUNING_LID_AGGRESSIVE:
+        return t->lid_aggressive;
+    case POWERGOV_TUNING_DISPLAY_AGGRESSIVE:
+        return t->display_aggressive;
     default:
         return 0;
     }
@@ -847,6 +866,114 @@ static int periph_get_tuning(GtkWidget *chk)
     if (!data)
         return -1;
     return GPOINTER_TO_INT(data) - 1;
+}
+
+static void ui_set_check_pending(GtkWidget *chk, int pending)
+{
+    GtkStyleContext *style;
+
+    if (!chk)
+        return;
+
+    style = gtk_widget_get_style_context(chk);
+    if (pending)
+        gtk_style_context_add_class(style, "pg-periph-pending");
+    else
+        gtk_style_context_remove_class(style, "pg-periph-pending");
+}
+
+static void update_optional_checks_sensitive(AppCtx *ctx)
+{
+    int i;
+
+    if (!ctx)
+        return;
+
+    for (i = 0; i < POWERGOV_FEATURE_COUNT; i++)
+    {
+        int tlp_block;
+
+        if (!ctx->feature_checks[i])
+            continue;
+        tlp_block = ctx->tlp_active_cached && ui_tlp_blocks_feature(i);
+        gtk_widget_set_sensitive(
+            ctx->feature_checks[i],
+            ctx->feature_pending[i] < 0 && !tlp_block);
+    }
+    if (ctx->lid_aggressive_check)
+        gtk_widget_set_sensitive(ctx->lid_aggressive_check, ctx->lid_pending < 0);
+    if (ctx->display_aggressive_check)
+        gtk_widget_set_sensitive(ctx->display_aggressive_check,
+                                 ctx->display_pending < 0);
+}
+
+static void feature_set_pending(AppCtx *ctx, int id, int value)
+{
+    if (!ctx || id < 0 || id >= POWERGOV_FEATURE_COUNT ||
+        !ctx->feature_checks[id])
+        return;
+
+    ctx->feature_pending[id] = value;
+    ui_set_check_pending(ctx->feature_checks[id], 1);
+    update_optional_checks_sensitive(ctx);
+}
+
+static void feature_clear_pending(AppCtx *ctx, int id)
+{
+    if (!ctx || id < 0 || id >= POWERGOV_FEATURE_COUNT)
+        return;
+
+    ctx->feature_pending[id] = -1;
+    if (ctx->feature_checks[id])
+        ui_set_check_pending(ctx->feature_checks[id], 0);
+    update_optional_checks_sensitive(ctx);
+}
+
+static void sync_feature_check(AppCtx *ctx, int id, int on)
+{
+    int want;
+    int cur;
+
+    if (!ctx || id < 0 || id >= POWERGOV_FEATURE_COUNT ||
+        !ctx->feature_checks[id] || ctx->feature_pending[id] >= 0)
+        return;
+
+    want = on ? 1 : 0;
+    cur = gtk_toggle_button_get_active(
+              GTK_TOGGLE_BUTTON(ctx->feature_checks[id])) ? 1 : 0;
+    if (cur == want)
+        return;
+
+    g_signal_handler_block(ctx->feature_checks[id], ctx->feature_handlers[id]);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(ctx->feature_checks[id]),
+                                 want);
+    g_signal_handler_unblock(ctx->feature_checks[id], ctx->feature_handlers[id]);
+}
+
+static void sync_lid_display_from_tuning(AppCtx *ctx,
+                                         const powergov_reply_tuning_t *tuning)
+{
+    if (!ctx || !tuning)
+        return;
+
+    if (ctx->lid_aggressive_check && ctx->lid_pending < 0)
+    {
+        g_signal_handler_block(ctx->lid_aggressive_check, ctx->lid_handler);
+        gtk_toggle_button_set_active(
+            GTK_TOGGLE_BUTTON(ctx->lid_aggressive_check),
+            tuning->lid_aggressive);
+        g_signal_handler_unblock(ctx->lid_aggressive_check, ctx->lid_handler);
+    }
+    if (ctx->display_aggressive_check && ctx->display_pending < 0)
+    {
+        g_signal_handler_block(ctx->display_aggressive_check,
+                               ctx->display_handler);
+        gtk_toggle_button_set_active(
+            GTK_TOGGLE_BUTTON(ctx->display_aggressive_check),
+            tuning->display_aggressive);
+        g_signal_handler_unblock(ctx->display_aggressive_check,
+                                 ctx->display_handler);
+    }
 }
 
 static void update_periph_checks_sensitive(AppCtx *ctx)
@@ -1225,28 +1352,8 @@ static void on_dev_tab_switch(GtkNotebook *notebook, GtkWidget *page,
     (void)page;
 
     ctx->dev_tab_current = (int)page_num;
-    if (ctx->window_focused && dev_mode_active(ctx))
+    if (ctx->window_focused)
         refresh_async(ctx);
-}
-
-static void update_custom_mode_visibility(AppCtx *ctx)
-{
-    if (ctx->mode_buttons[POWERGOV_USER_CUSTOM])
-    {
-        gtk_widget_set_visible(ctx->mode_buttons[POWERGOV_USER_CUSTOM],
-                               dev_mode_active(ctx));
-    }
-}
-
-static void update_dev_tab_access(AppCtx *ctx)
-{
-    gtk_widget_set_sensitive(ctx->dev_notebook, ctx->dev_unlocked);
-    gtk_widget_set_visible(ctx->dev_lock_banner, !ctx->dev_unlocked);
-    update_custom_mode_visibility(ctx);
-    if (ctx->dev_unlocked)
-        gtk_button_set_label(GTK_BUTTON(ctx->dev_btn), _(PG_TR_BTN_USER_MODE));
-    else
-        gtk_button_set_label(GTK_BUTTON(ctx->dev_btn), _(PG_TR_BTN_DEV_MODE));
 }
 
 static void fill_text_view(GtkWidget *view, const char *text)
@@ -1918,7 +2025,6 @@ static void set_mode_sensitive(AppCtx *ctx, int sensitive)
 
 static void update_service_buttons(AppCtx *ctx, int systemd_active)
 {
-    int dev = dev_mode_active(ctx);
     int recovery = ctx->service_installed && !ctx->daemon_up;
     const char *primary;
 
@@ -1929,10 +2035,11 @@ static void update_service_buttons(AppCtx *ctx, int systemd_active)
     else
         primary = _(PG_TR_BTN_START_SERVICE);
 
-    gtk_widget_set_visible(ctx->service_box, dev || !ctx->daemon_up);
+    gtk_widget_set_visible(ctx->service_box,
+                           !ctx->daemon_up || ctx->service_installed);
     gtk_button_set_label(GTK_BUTTON(ctx->start_btn), primary);
-    gtk_widget_set_visible(ctx->stop_btn, dev);
-    gtk_widget_set_visible(ctx->restart_btn, dev || recovery);
+    gtk_widget_set_visible(ctx->stop_btn, ctx->service_installed);
+    gtk_widget_set_visible(ctx->restart_btn, ctx->service_installed);
     if (ctx->service_installed)
         gtk_widget_set_sensitive(ctx->start_btn, recovery || !systemd_active);
     else
@@ -1954,7 +2061,7 @@ static void apply_dev_panels(AppCtx *ctx, const UiSnapshot *s)
     char block[4096];
     int i;
 
-    if (!dev_mode_active(ctx) || !s->daemon_up)
+    if (!s->daemon_up)
         return;
 
     if (s->sys_ok)
@@ -1963,7 +2070,9 @@ static void apply_dev_panels(AppCtx *ctx, const UiSnapshot *s)
                  s->sys.pretty_name, s->sys.kernel, s->sys.powergov_version,
                  s->sys.systemd_active ? _(PG_TR_ACTIVE) : _(PG_TR_INACTIVE),
                  s->sys.ppd_detected ? _(PG_TR_YES) : _(PG_TR_NO),
-                 s->sys.tlp_detected ? _(PG_TR_YES) : _(PG_TR_NO));
+                 s->sys.tlp_detected ? _(PG_TR_YES) : _(PG_TR_NO),
+                 lid_state_label(s->sys.lid_state),
+                 session_idle_label(s->sys.session_idle));
         fill_text_view(ctx->sys_view, block);
     }
 
@@ -2147,8 +2256,7 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
         gtk_label_set_text(GTK_LABEL(ctx->power_label), "");
         set_mode_sensitive(ctx, FALSE);
         update_service_buttons(ctx, s->systemd_active);
-        if (!dev_mode_active(ctx))
-            clear_dev_views(ctx);
+        clear_dev_views(ctx);
 
         ctx->daemon_version[0] = '\0';
         update_about_service_label(ctx, NULL, 0);
@@ -2251,7 +2359,7 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
     if (ctx->tlp_banner)
         gtk_widget_set_visible(ctx->tlp_banner, ctx->tlp_active_cached);
 
-    if (dev_mode_active(ctx) && s->st_ok)
+    if (s->st_ok)
     {
         ctx->feature_ui_sync = 1;
         if (ctx->ui_action_inflight == 0)
@@ -2264,15 +2372,43 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
 
                 if (ctx->feature_checks[i])
                 {
-                    gtk_widget_set_sensitive(ctx->feature_checks[i], !tlp_block);
-                    g_signal_handler_block(ctx->feature_checks[i],
-                                           ctx->feature_handlers[i]);
-                    gtk_toggle_button_set_active(
-                        GTK_TOGGLE_BUTTON(ctx->feature_checks[i]), on);
-                    g_signal_handler_unblock(ctx->feature_checks[i],
-                                             ctx->feature_handlers[i]);
+                    if (ctx->feature_pending[i] < 0)
+                    {
+                        g_signal_handler_block(ctx->feature_checks[i],
+                                               ctx->feature_handlers[i]);
+                        gtk_toggle_button_set_active(
+                            GTK_TOGGLE_BUTTON(ctx->feature_checks[i]), on);
+                        g_signal_handler_unblock(ctx->feature_checks[i],
+                                                 ctx->feature_handlers[i]);
+                    }
+                    gtk_widget_set_sensitive(ctx->feature_checks[i],
+                                             !tlp_block &&
+                                             ctx->feature_pending[i] < 0);
                 }
             }
+            if (ctx->lid_aggressive_check && s->tuning_ok &&
+                ctx->lid_pending < 0)
+            {
+                g_signal_handler_block(ctx->lid_aggressive_check,
+                                       ctx->lid_handler);
+                gtk_toggle_button_set_active(
+                    GTK_TOGGLE_BUTTON(ctx->lid_aggressive_check),
+                    s->tuning.lid_aggressive);
+                g_signal_handler_unblock(ctx->lid_aggressive_check,
+                                         ctx->lid_handler);
+            }
+            if (ctx->display_aggressive_check && s->tuning_ok &&
+                ctx->display_pending < 0)
+            {
+                g_signal_handler_block(ctx->display_aggressive_check,
+                                       ctx->display_handler);
+                gtk_toggle_button_set_active(
+                    GTK_TOGGLE_BUTTON(ctx->display_aggressive_check),
+                    s->tuning.display_aggressive);
+                g_signal_handler_unblock(ctx->display_aggressive_check,
+                                         ctx->display_handler);
+            }
+            update_optional_checks_sensitive(ctx);
         }
 
         if (s->tuning_ok)
@@ -2280,8 +2416,7 @@ static void apply_snapshot(AppCtx *ctx, UiSnapshot *s)
         ctx->feature_ui_sync = 0;
     }
 
-    if (dev_mode_active(ctx))
-        apply_dev_panels(ctx, s);
+    apply_dev_panels(ctx, s);
 
     if (s->daemon_outdated && !ctx->daemon_upgrade_prompted)
         maybe_prompt_daemon_upgrade(ctx, s->daemon_version, s->daemon_api_old);
@@ -2444,8 +2579,8 @@ static void refresh_async(AppCtx *ctx)
     s->ctx = ctx;
     s->fetch_dev_mask = (int)compute_fetch_mask(ctx);
     s->fetch_tuning =
-        (dev_mode_active(ctx) &&
-         (ctx->dev_tab_current == 5 || ctx->ui_action_inflight > 0))
+        (ctx->main_tab_current == PG_MAIN_TAB_DIAG ||
+         ctx->ui_action_inflight > 0)
             ? 1
             : 0;
 
@@ -2590,9 +2725,20 @@ static void user_action_done(GObject *src, GAsyncResult *res, gpointer data)
         const char *name =
             pg_feature_label((powergov_feature_id_t)r->feature_id);
         const char *state = r->feature_on ? _(PG_TR_ACTIVE) : _(PG_TR_INACTIVE);
+        int id = r->feature_id;
+
+        feature_clear_pending(ctx, id);
 
         if (!r->send_ok || !r->verify_ok)
         {
+            if (powergov_client_query_status(&r->st) == 0)
+            {
+                int on = (r->st.features_mask >> id) & 1;
+
+                ctx->feature_ui_sync = 1;
+                sync_feature_check(ctx, id, on);
+                ctx->feature_ui_sync = 0;
+            }
             if (ctx->tlp_active_cached &&
                 ui_tlp_blocks_feature(r->feature_id) &&
                 r->feature_on)
@@ -2616,14 +2762,17 @@ static void user_action_done(GObject *src, GAsyncResult *res, gpointer data)
     else if (r->kind == UI_ACT_SET_TUNING)
     {
         int idx = periph_index_from_tuning(r->tuning_id);
+        int is_lid = (r->tuning_id == POWERGOV_TUNING_LID_AGGRESSIVE);
+        int is_display = (r->tuning_id == POWERGOV_TUNING_DISPLAY_AGGRESSIVE);
 
         if (idx >= 0 && ctx->periph_checks[idx])
-        {
-            gtk_style_context_remove_class(
-                gtk_widget_get_style_context(ctx->periph_checks[idx]),
-                "pg-periph-pending");
-        }
+            ui_set_check_pending(ctx->periph_checks[idx], 0);
+        if (is_lid && ctx->lid_aggressive_check)
+            ui_set_check_pending(ctx->lid_aggressive_check, 0);
+        if (is_display && ctx->display_aggressive_check)
+            ui_set_check_pending(ctx->display_aggressive_check, 0);
         update_periph_checks_sensitive(ctx);
+        update_optional_checks_sensitive(ctx);
 
         if (!r->send_ok || !r->verify_ok)
         {
@@ -2633,6 +2782,10 @@ static void user_action_done(GObject *src, GAsyncResult *res, gpointer data)
             show_feedback(ctx, 0, _(PG_TR_LOG_TUNING_FAIL));
             if (idx >= 0)
                 ctx->periph_pending[idx] = -1;
+            if (is_lid)
+                ctx->lid_pending = -1;
+            if (is_display)
+                ctx->display_pending = -1;
             if (powergov_client_query_tuning(&tuning) == 0)
             {
                 UiSnapshot snap;
@@ -2641,12 +2794,19 @@ static void user_action_done(GObject *src, GAsyncResult *res, gpointer data)
                 snap.tuning_ok = 1;
                 snap.tuning = tuning;
                 sync_periph_checks_from_tuning(ctx, &snap);
+                ctx->feature_ui_sync = 1;
+                sync_lid_display_from_tuning(ctx, &tuning);
+                ctx->feature_ui_sync = 0;
             }
         }
         else
         {
             if (idx >= 0)
                 ctx->periph_pending[idx] = -1;
+            if (is_lid)
+                ctx->lid_pending = -1;
+            if (is_display)
+                ctx->display_pending = -1;
             snprintf(logline, sizeof(logline), "%s", _(PG_TR_LOG_TUNING_OK));
             show_feedback(ctx, 1, _(PG_TR_LOG_TUNING_OK));
         }
@@ -2668,6 +2828,9 @@ static void user_action_done(GObject *src, GAsyncResult *res, gpointer data)
             snap.tuning_ok = 1;
             snap.tuning = tuning;
             sync_periph_checks_from_tuning(ctx, &snap);
+            ctx->feature_ui_sync = 1;
+            sync_lid_display_from_tuning(ctx, &tuning);
+            ctx->feature_ui_sync = 0;
         }
     }
     else
@@ -2686,87 +2849,6 @@ static void run_user_action_async(AppCtx *ctx, UiActionResult *r)
     g_object_unref(task);
 }
 
-static void enter_dev_mode(AppCtx *ctx)
-{
-    ctx->dev_unlocked = 1;
-    ctx->dev_tab_current =
-        gtk_notebook_get_current_page(GTK_NOTEBOOK(ctx->dev_notebook));
-    update_dev_tab_access(ctx);
-    update_service_buttons(ctx, ctx->daemon_up);
-    gtk_notebook_set_current_page(GTK_NOTEBOOK(ctx->main_notebook), 1);
-    append_action_log(ctx, _(PG_TR_LOG_DEV_ON));
-    show_feedback(ctx, 1, _(PG_TR_FB_DEV_ON));
-    refresh_async(ctx);
-}
-
-static void exit_dev_mode(AppCtx *ctx)
-{
-    ctx->dev_unlocked = 0;
-    update_dev_tab_access(ctx);
-    update_service_buttons(ctx, ctx->daemon_up);
-    clear_dev_views(ctx);
-    gtk_notebook_set_current_page(GTK_NOTEBOOK(ctx->main_notebook), 0);
-    append_action_log(ctx, _(PG_TR_LOG_DEV_OFF));
-    show_feedback(ctx, 1, _(PG_TR_FB_DEV_OFF));
-    refresh_async(ctx);
-}
-
-static void dev_auth_child_exit(GPid pid, gint status, gpointer data)
-{
-    AppCtx *ctx = data;
-    GError *err = NULL;
-
-    g_spawn_close_pid(pid);
-
-    if (g_spawn_check_wait_status(status, &err))
-    {
-        enter_dev_mode(ctx);
-        g_clear_error(&err);
-        return;
-    }
-
-    show_feedback(ctx, 0, _(PG_TR_ERR_DEV_DENIED));
-    append_action_log(ctx, _(PG_TR_LOG_DEV_DENIED));
-    g_clear_error(&err);
-}
-
-static void start_dev_auth_async(AppCtx *ctx)
-{
-    char *argv[] = {
-        (char *)POWERGOV_PKEXEC,
-        (char *)POWERGOV_DEV_AUTH,
-        NULL
-    };
-    GError *err = NULL;
-    GPid pid;
-
-    if (access(POWERGOV_DEV_AUTH, X_OK) != 0)
-    {
-        show_feedback(ctx, 0, _(PG_TR_ERR_DEV_INCOMPLETE));
-        append_action_log(ctx, _(PG_TR_LOG_DEV_INCOMPLETE));
-        return;
-    }
-
-    if (access(POWERGOV_PKEXEC, X_OK) != 0)
-    {
-        show_feedback(ctx, 0, _(PG_TR_ERR_DEV_NO_PKEXEC));
-        append_action_log(ctx, _(PG_TR_LOG_DEV_UNAVAILABLE));
-        return;
-    }
-
-    if (!g_spawn_async(NULL, argv, NULL,
-                       G_SPAWN_DO_NOT_REAP_CHILD,
-                       NULL, NULL, &pid, &err))
-    {
-        show_feedback(ctx, 0, _(PG_TR_ERR_DEV_DIALOG));
-        append_action_log(ctx, _(PG_TR_LOG_DEV_PERM_ERROR));
-        g_clear_error(&err);
-        return;
-    }
-
-    g_child_watch_add(pid, dev_auth_child_exit, ctx);
-}
-
 static gboolean on_timer(gpointer data)
 {
     refresh_async((AppCtx *)data);
@@ -2778,6 +2860,7 @@ static void on_feature_toggled(GtkToggleButton *btn, gpointer data)
     AppCtx *ctx = data;
     UiActionResult *r;
     int id;
+    int value;
 
     if (ctx->feature_ui_sync)
         return;
@@ -2786,16 +2869,20 @@ static void on_feature_toggled(GtkToggleButton *btn, gpointer data)
     if (id < 0 || id >= POWERGOV_FEATURE_COUNT)
         return;
 
+    value = gtk_toggle_button_get_active(btn) ? 1 : 0;
+
     if (!ensure_daemon_for_action(ctx))
     {
         refresh_async(ctx);
         return;
     }
 
+    feature_set_pending(ctx, id, value);
+
     r = g_new0(UiActionResult, 1);
     r->kind = UI_ACT_SET_FEATURE;
     r->feature_id = id;
-    r->feature_on = gtk_toggle_button_get_active(btn) ? 1 : 0;
+    r->feature_on = value;
     run_user_action_async(ctx, r);
 }
 
@@ -2829,13 +2916,73 @@ static void on_periph_toggled(GtkToggleButton *btn, gpointer data)
 
     ctx->periph_pending[idx] = value;
     update_periph_checks_sensitive(ctx);
-    gtk_style_context_add_class(
-        gtk_widget_get_style_context(ctx->periph_checks[idx]),
-        "pg-periph-pending");
+    ui_set_check_pending(ctx->periph_checks[idx], 1);
 
     r = g_new0(UiActionResult, 1);
     r->kind = UI_ACT_SET_TUNING;
     r->tuning_id = tuning_id;
+    r->tuning_value = value;
+    run_user_action_async(ctx, r);
+}
+
+static void on_lid_toggled(GtkToggleButton *btn, gpointer data)
+{
+    AppCtx *ctx = data;
+    UiActionResult *r;
+    int value;
+
+    if (ctx->feature_ui_sync)
+        return;
+
+    value = gtk_toggle_button_get_active(btn) ? 1 : 0;
+
+    if (!ensure_daemon_for_action(ctx))
+    {
+        g_signal_handler_block(btn, ctx->lid_handler);
+        gtk_toggle_button_set_active(btn, !value);
+        g_signal_handler_unblock(btn, ctx->lid_handler);
+        refresh_async(ctx);
+        return;
+    }
+
+    ctx->lid_pending = value;
+    ui_set_check_pending(ctx->lid_aggressive_check, 1);
+    update_optional_checks_sensitive(ctx);
+
+    r = g_new0(UiActionResult, 1);
+    r->kind = UI_ACT_SET_TUNING;
+    r->tuning_id = POWERGOV_TUNING_LID_AGGRESSIVE;
+    r->tuning_value = value;
+    run_user_action_async(ctx, r);
+}
+
+static void on_display_toggled(GtkToggleButton *btn, gpointer data)
+{
+    AppCtx *ctx = data;
+    UiActionResult *r;
+    int value;
+
+    if (ctx->feature_ui_sync)
+        return;
+
+    value = gtk_toggle_button_get_active(btn) ? 1 : 0;
+
+    if (!ensure_daemon_for_action(ctx))
+    {
+        g_signal_handler_block(btn, ctx->display_handler);
+        gtk_toggle_button_set_active(btn, !value);
+        g_signal_handler_unblock(btn, ctx->display_handler);
+        refresh_async(ctx);
+        return;
+    }
+
+    ctx->display_pending = value;
+    ui_set_check_pending(ctx->display_aggressive_check, 1);
+    update_optional_checks_sensitive(ctx);
+
+    r = g_new0(UiActionResult, 1);
+    r->kind = UI_ACT_SET_TUNING;
+    r->tuning_id = POWERGOV_TUNING_DISPLAY_AGGRESSIVE;
     r->tuning_value = value;
     run_user_action_async(ctx, r);
 }
@@ -2943,24 +3090,6 @@ static gboolean on_battery_scale_release(GtkWidget *widget, GdkEventButton *ev,
     }
     apply_battery_setting(ctx);
     return FALSE;
-}
-
-static void on_dev_btn_clicked(GtkButton *btn, gpointer data)
-{
-    AppCtx *ctx = data;
-
-    (void)btn;
-
-    if (ctx->dev_unlocked)
-    {
-        exit_dev_mode(ctx);
-        return;
-    }
-
-    if (!ensure_daemon_for_action(ctx))
-        return;
-
-    start_dev_auth_async(ctx);
 }
 
 static void on_service_start(GtkButton *b, gpointer data)
@@ -3140,6 +3269,17 @@ static void refresh_features_page_labels(AppCtx *ctx)
         gtk_button_set_label(GTK_BUTTON(ctx->periph_checks[i]),
                              _(periph_labels[i]));
     }
+
+    if (ctx->lid_aggressive_check)
+    {
+        gtk_button_set_label(GTK_BUTTON(ctx->lid_aggressive_check),
+                             _(PG_TR_FEAT_LID_AGGRESSIVE));
+    }
+    if (ctx->display_aggressive_check)
+    {
+        gtk_button_set_label(GTK_BUTTON(ctx->display_aggressive_check),
+                             _(PG_TR_FEAT_DISPLAY_AGGRESSIVE));
+    }
 }
 
 static void invalidate_dev_panel_cache(AppCtx *ctx)
@@ -3172,7 +3312,6 @@ static void refresh_ui_language(AppCtx *ctx)
     if (ctx->uninstall_btn)
         gtk_button_set_label(GTK_BUTTON(ctx->uninstall_btn),
                              _(PG_TR_BTN_UNINSTALL));
-    update_dev_tab_access(ctx);
 
     if (ctx->battery_label)
         gtk_label_set_text(GTK_LABEL(ctx->battery_label),
@@ -3191,8 +3330,6 @@ static void refresh_ui_language(AppCtx *ctx)
     if (ctx->activity_label)
         gtk_label_set_text(GTK_LABEL(ctx->activity_label),
                            _(PG_TR_LABEL_RECENT_ACTIVITY));
-
-    gtk_label_set_text(GTK_LABEL(ctx->dev_lock_banner), _(PG_TR_DEV_LOCK_BANNER));
 
     notebook_tab_set_text(GTK_NOTEBOOK(ctx->main_notebook), 0,
                           _(PG_TR_TAB_PROFILE));
@@ -3426,6 +3563,27 @@ static GtkWidget *make_features_page(AppCtx *ctx)
         gtk_box_pack_start(GTK_BOX(inner), chk, FALSE, FALSE, 0);
     }
 
+    ctx->lid_aggressive_check =
+        gtk_check_button_new_with_label(_(PG_TR_FEAT_LID_AGGRESSIVE));
+    gtk_label_set_xalign(
+        GTK_LABEL(gtk_bin_get_child(GTK_BIN(ctx->lid_aggressive_check))), 0.0);
+    ctx->lid_handler = g_signal_connect(
+        ctx->lid_aggressive_check, "toggled",
+        G_CALLBACK(on_lid_toggled), ctx);
+    gtk_box_pack_start(GTK_BOX(inner), ctx->lid_aggressive_check,
+                       FALSE, FALSE, 0);
+
+    ctx->display_aggressive_check =
+        gtk_check_button_new_with_label(_(PG_TR_FEAT_DISPLAY_AGGRESSIVE));
+    gtk_label_set_xalign(
+        GTK_LABEL(gtk_bin_get_child(GTK_BIN(ctx->display_aggressive_check))),
+        0.0);
+    ctx->display_handler = g_signal_connect(
+        ctx->display_aggressive_check, "toggled",
+        G_CALLBACK(on_display_toggled), ctx);
+    gtk_box_pack_start(GTK_BOX(inner), ctx->display_aggressive_check,
+                       FALSE, FALSE, 0);
+
     gtk_container_add(GTK_CONTAINER(scroll), inner);
     gtk_widget_set_vexpand(scroll, TRUE);
     gtk_box_pack_start(GTK_BOX(page), scroll, TRUE, TRUE, 0);
@@ -3570,7 +3728,6 @@ static void build_ui(AppCtx *ctx)
                                      ctx->mode_buttons[0]);
         gtk_box_pack_start(GTK_BOX(ctx->mode_box), btn, FALSE, FALSE, 0);
     }
-    gtk_widget_set_visible(ctx->mode_buttons[POWERGOV_USER_CUSTOM], FALSE);
 
     bat_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
     gtk_style_context_add_class(gtk_widget_get_style_context(bat_box),
@@ -3637,13 +3794,6 @@ static void build_ui(AppCtx *ctx)
     }
 
     dev_tab_page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    ctx->dev_lock_banner = gtk_label_new(_(PG_TR_DEV_LOCK_BANNER));
-    gtk_label_set_line_wrap(GTK_LABEL(ctx->dev_lock_banner), TRUE);
-    gtk_label_set_xalign(GTK_LABEL(ctx->dev_lock_banner), 0.0);
-    gtk_style_context_add_class(
-        gtk_widget_get_style_context(ctx->dev_lock_banner), "pg-dev-lock");
-    gtk_box_pack_start(GTK_BOX(dev_tab_page), ctx->dev_lock_banner,
-                       FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(dev_tab_page), ctx->dev_notebook, TRUE, TRUE, 0);
     gtk_notebook_append_page(GTK_NOTEBOOK(ctx->main_notebook), dev_tab_page,
                              gtk_label_new(_(PG_TR_TAB_DIAGNOSTIC)));
@@ -3658,12 +3808,6 @@ static void build_ui(AppCtx *ctx)
                      G_CALLBACK(on_uninstall_clicked), ctx);
     gtk_widget_set_halign(ctx->uninstall_btn, GTK_ALIGN_START);
     gtk_box_pack_start(GTK_BOX(vbox), ctx->uninstall_btn, FALSE, FALSE, 0);
-
-    ctx->dev_btn = gtk_button_new_with_label(_(PG_TR_BTN_DEV_MODE));
-    g_signal_connect(ctx->dev_btn, "clicked", G_CALLBACK(on_dev_btn_clicked), ctx);
-    gtk_box_pack_start(GTK_BOX(vbox), ctx->dev_btn, FALSE, FALSE, 0);
-
-    update_dev_tab_access(ctx);
 }
 
 static void detach_from_terminal_if_needed(void)
@@ -3709,6 +3853,10 @@ int main(int argc, char **argv)
     }
 
     memset(&ctx, 0, sizeof(ctx));
+    for (i = 0; i < POWERGOV_FEATURE_COUNT; i++)
+        ctx.feature_pending[i] = -1;
+    ctx.lid_pending = -1;
+    ctx.display_pending = -1;
     for (i = 0; i < 3; i++)
         ctx.periph_pending[i] = -1;
     detach_from_terminal_if_needed();
